@@ -6,3 +6,19 @@ data/*
 *_files/
 /_site/
 /_freeze/
+
+# Ignore python virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Ignore python cache and compiled files
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore local IDE settings
+.positron/
+.vscode/
