@@ -2,6 +2,12 @@
 from pathlib import Path
 import scipy
 import numpy as np
+import itertools
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+import os
+from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
+from sklearn.cluster import KMeans
 
 # Load one calcium imaging file to confirm binning
 # 1. Get the repo root
@@ -18,6 +24,7 @@ for key, val in data_cal.items():
     if not key.startswith('__'):
         print(key, np.array(val).shape)
 # Data stored in raw_pop_vector_info trials (neurons x time bins x trials)
+binned_VISp_cal = data_cal['raw_pop_vector_info_trials']
 
 # Load one neuropixels file to confirm binning
 # 1. Define the path to the data file
@@ -68,5 +75,91 @@ binned_data = np.mean(reshaped_data, axis = 3)
 binned_data = np.transpose(binned_data, (0, 2, 1, 3))
 # Join data for 2 blocks
 binned_VISp = np.reshape(binned_data, (68, 30, 60))
-#
+# Confirm
 print(binned_VISp.shape)
+# neurons x bins x trials
+
+# Build RSM for each area
+# Using trial to trial correlations instead of averaging across trials
+rsms = {}
+for i, area in enumerate(brain_areas):
+
+    if(neuropixels_data[i].size > 0):
+        n_neurons = neuropixels_data[i].shape[0]
+        n_bins = 30
+        n_trials = 60
+        
+        # Bin the data
+        reshaped_data = np.reshape(neuropixels_data[i], (n_neurons, n_bins, n_bins, n_bins, 2))
+        binned_data = np.mean(reshaped_data, axis = 3)
+        binned_data = np.transpose(binned_data, (0, 2, 1, 3))
+        binned_data = np.reshape(binned_data, (n_neurons, n_bins, n_trials))
+        
+        # Build the RSM
+        res = np.zeros((n_bins, n_bins))
+        cors = np.corrcoef(binned_data.reshape(n_neurons, n_bins*n_trials), rowvar=False)
+        for j,k in itertools.product(range(n_bins), range(n_bins)):
+            res[j,k] = np.mean(cors[j*n_trials:(j+1)*n_trials, k*n_trials:(k+1)*n_trials])
+        rsms[area] = res
+
+# Plot RSMs by area
+fig, axes = plt.subplots(2, 3)
+axes = axes.flatten()
+plot_idx = 0
+for item in rsms:
+    axes[plot_idx].imshow(rsms[item], cmap = "Reds")
+    axes[plot_idx].set_title(item)
+    plot_idx += 1
+
+# Dimension reduction
+pca = PCA(n_components=2)
+fig, axes = plt.subplots(2, 3)
+axes = axes.flatten()
+plot_idx = 0
+for item in rsms:
+    dem_red = pca.fit_transform(rsms[item])
+    axes[plot_idx].scatter(dem_red[:,0], dem_red[:,1])
+    axes[plot_idx].set_title(item)
+    plot_idx += 1
+
+# Validate against the stimulus data
+# Download Natural Movie 1
+manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')
+cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
+movie = cache.get_natural_movie_template(1)
+print(movie.shape)
+# Bin movie frames into 30 one-second bins
+movie_binned = movie.reshape(30, 30, 304, 608).mean(axis=1)  # (30, 304, 608)
+movie_flat = movie_binned.reshape(30, -1).astype(float)       # (30, 184832)
+# Create a Pixel Similarity Matrix (30 x 30)
+pixel_similarity = np.corrcoef(movie_flat)
+print('Pixel similarity matrix shape:', pixel_similarity.shape)
+# Plot
+plt.figure(figsize=(6,6))
+plt.imshow(pixel_similarity, cmap='viridis')
+plt.colorbar(label='Pixel correlation')
+# PCA on this pixel similarity matrix to give groups
+stimulus_dem_red = pca.fit_transform(pixel_similarity)
+# Find the 2 clusters
+stimulus_clusters = KMeans(n_clusters = 2).fit_predict(stimulus_dem_red)
+
+# Use the pc1 dimension to provide groups to the reponse PCA
+fig, axes = plt.subplots(2, 3)
+axes = axes.flatten()
+plot_idx = 0
+for item in rsms:
+    dem_red = pca.fit_transform(rsms[item])
+    axes[plot_idx].scatter(dem_red[:,0], dem_red[:,1], c=stimulus_clusters, cmap = 'viridis')
+    axes[plot_idx].set_title(item)
+    plot_idx += 1
+
+# What is the pixel similarity capturing?
+fig, axes = plt.subplots(5, 6, figsize=(15, 10))
+axes = axes.flatten()
+for i in range(30):
+    axes[i].imshow(movie_binned[i], cmap='gray')
+    axes[i].set_title(f'Bin {i} | C{stimulus_clusters[i]}', 
+                      color='yellow' if stimulus_clusters[i] == 0 else 'purple')
+    axes[i].axis('off')
+plt.tight_layout()
+# The car appears around bins 9, 10, 11
