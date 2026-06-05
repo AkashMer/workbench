@@ -7,7 +7,7 @@ Storage space for the analysis scripts behind the posts in the Workbench section
 | Folder | Description |
 |---|---|
 | **data** | Placeholder for the data used, organized by post. Data itself is not stored here; see below. |
-| **scripts** | Jupyter Notebooks / R Markdown files containing the analysis code, organized by post. Mirrors the `data/` subfolder structure. |
+| **scripts** | Quarto `.qmd` files containing the analysis code, organized by post. Mirrors the `data/` subfolder structure. |
 
 ## Licensing
 
@@ -25,6 +25,6 @@ Each post is self-contained under its own slug. To reproduce one:
 
 1. Clone this repo locally.
 2. Open that post's README at `scripts/<post-slug>/README.md`. It lists the data source(s), the exact files, and the setup for that post.
-3. Install the dependencies from `scripts/<post-slug>/requirements.txt` (Python) or `renv.lock` (R).
+3. Recreate the environment using `mamba env create -f environment.yml` from the post's script folder.
 4. Download the data into `data/<post-slug>/` as the README directs.
-5. Run the notebook/script in `scripts/<post-slug>/`.
+5. Run the `.qmd` file in `scripts/<post-slug>/`.
