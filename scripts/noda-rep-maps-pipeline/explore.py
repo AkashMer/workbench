@@ -1,64 +1,99 @@
 # Import necessary libraries
 from pathlib import Path
-import scipy
+from pymatreader import read_mat
 import numpy as np
+import pandas as pd
 import itertools
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import os
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
+from allensdk.core.brain_observatory_cache import BrainObservatoryCache
 from sklearn.cluster import KMeans
 
 # Load one calcium imaging file to confirm binning
 # 1. Get the repo root
 repo_root = Path.cwd()
+data_path = repo_root / "data" / "noda-rep-maps-pipeline"
 
 # 2. Define the path to the data file
-data_file_path_cal = repo_root / "data" / "noda-rep-maps-pipeline" / "calcium_excitatory" / "VISp" / "511509529.mat"
+data_file_path_cal = data_path / "calcium_excitatory" / "VISp" / "511509529.mat"
 
 # 3. Load the file
-data_cal = scipy.io.loadmat(data_file_path_cal)
+data_cal = read_mat(data_file_path_cal)
 
 # 4. Check out what is present in the file
-for key, val in data_cal.items():
+for key, item in data_cal.items():
     if not key.startswith('__'):
-        print(key, np.array(val).shape)
+        if isinstance(item, list):
+            print(key, type(item), len(item))
+        elif isinstance(item, np.ndarray):
+            print(key, type(item), item.shape)
+        else:
+            print(key, type(item), item)
 # Data stored in raw_pop_vector_info trials (neurons x time bins x trials)
 binned_VISp_cal = data_cal['raw_pop_vector_info_trials']
+# No mouse_id or similar information present
+
+# Confirm if calcium inhibitory data is also has the same structure
+# 1. Define the path to the data file
+data_file_path_cal_inhib = data_path / "calcium_inhibitory" / "VISp" / "617395453.mat"
+
+# 2. Load the data
+data_cal_inhib = read_mat(data_file_path_cal_inhib)
+
+# 3. Check out what is present in the file
+for key, item in data_cal_inhib.items():
+    if not key.startswith('__'):
+        if isinstance(item, list):
+            print(key, type(item), len(item))
+        elif isinstance(item, np.ndarray):
+            print(key, type(item), item.shape)
+        else:
+            print(key, type(item), item)
+# Traces are in neurons x raw frames x days => unbinned
+# I don't know enough about representational maps yet to understand how I can use
+# interneuron data + data is unbinned. I am excluding calcium inhibitory data.
 
 # Load one neuropixels file to confirm binning
 # 1. Define the path to the data file
-data_file_path = repo_root / "data" / "noda-rep-maps-pipeline" / "neuropixels" / "session_787025148.mat"
+data_file_path = data_path / "neuropixels" / "session_787025148.mat"
 
 # 2. Load the file
-data = scipy.io.loadmat(data_file_path)
+data = read_mat(data_file_path)
 
 # 3. Check out what is present in the file
-for key, val in data.items():
+for key, item in data.items():
     if not key.startswith('__'):
-        print(key, np.array(val).shape)
-# I can use this to create a mask over the neural activity data from Allen SDK?
+        if isinstance(item, list):
+            print(key, type(item), len(item))
+        elif isinstance(item, np.ndarray):
+            print(key, type(item), item.shape)
+        else:
+            print(key, type(item), item)
 # Confirm
-cell = data['informative_rater_mat'][0, 0]
+cell = data['informative_rater_mat'][0][0]
 print(cell.shape)
-# Seems like this is where the spiking information is stored
-# Cross-check with valid units and units cutoff
-valid_units = data['valid_units_drifting_gratings'][0, 0]
-units_cutoff = data['units_cutoff_per_area'][0, 0]
-print(valid_units.shape)
-print(valid_units)
-print(units_cutoff.shape)
-print(units_cutoff)
-# The processed data is in informative_rater_mat; no need to access AllenSDK for data
-
-# Limiting myself to Natural Movie 1
-# Checking repeats of movie in this one file
-data['mean_pupil_movement_repeats'][0, 0].shape
-# 10 repeats here for 1 area
+# Seems like this is where the spiking information is stored 68 neurons x 27000 frames x 2 blocks
+# No mouse_id or similar subject identifier stored in the processed data
+# But what is stored in the 1 position?
+cell_2 = data['informative_rater_mat'][1][0]
+print(cell_2.shape)
+# Matches the general shape but number of frames ie. repeats are lower
+# visual_drift analysis file point to:
+# 0 position is for Natural Movie 1 more repeats
+# 1 position is for Shuffled Natural Movie 1
+# Confirming this through repeats of movie in this one file
+data['mean_pupil_movement_repeats'][0].shape
+# 30 repeats, 2 blocks
+data['mean_pupil_movement_repeats'][1].shape
+# 10 repeats, 2 blocks
+# Limiting myself to Natural Movie 1 for now
+# The Shuffled part is most likely control for the experiement
 # Define the area names
 brain_areas = ['VISp','VISl','VISal','VISpm','VISrl','VISam','LGd','LP']
 # Get data for all areas and movie 1
-neuropixels_data = data['informative_rater_mat'][0, :8]
+neuropixels_data = data['informative_rater_mat'][0]
 # Confirm shape of each area
 for i, area in enumerate(brain_areas):
     print(area, neuropixels_data[i].shape)
@@ -107,7 +142,7 @@ fig, axes = plt.subplots(2, 3)
 axes = axes.flatten()
 plot_idx = 0
 for item in rsms:
-    axes[plot_idx].imshow(rsms[item], cmap = "Reds")
+    axes[plot_idx].imshow(rsms[item], cmap = "RdBu")
     axes[plot_idx].set_title(item)
     plot_idx += 1
 
@@ -136,7 +171,7 @@ pixel_similarity = np.corrcoef(movie_flat)
 print('Pixel similarity matrix shape:', pixel_similarity.shape)
 # Plot
 plt.figure(figsize=(6,6))
-plt.imshow(pixel_similarity, cmap='viridis')
+plt.imshow(pixel_similarity, cmap='RdBu')
 plt.colorbar(label='Pixel correlation')
 # PCA on this pixel similarity matrix to give groups
 stimulus_dem_red = pca.fit_transform(pixel_similarity)
@@ -163,6 +198,36 @@ for i in range(30):
     axes[i].axis('off')
 plt.tight_layout()
 # The car appears around bins 9, 10, 11
+
+# Compute the cohort size of neuropixels modality
+# Get the number of unique mice in the Neuropixels data
+neuropixels_session_table = cache.get_session_table()
+neuropixels_session_table.columns
+# The session_id most likely is the index id
+neuropixels_session_table = neuropixels_session_table.reset_index()
+neuropixels_session_table.columns
+neuropixels_session_table.id
+len(neuropixels_session_table.id)
+# Matches the file names and the number of neuropixels files
+# Compute the unique number of specimen_ids
+neuropixels_session_table.specimen_id.nunique()
+# Each session is equivalent to each mice. 58 total
+
+# Compute the cohort size of calcium_excitatory modality
+manifest_path_cal = os.path.join(os.path.expanduser('~'), 'allen_cache_ophys', 'manifest.json')
+cache_cal = BrainObservatoryCache(manifest_file=manifest_path_cal)
+calcium_session_info = cache_cal.get_experiment_containers()
+calcium_session_table = pd.DataFrame(columns=["id", 'donor_name'], index=range(len(calcium_session_info)))
+for i in range(len(calcium_session_info)):
+    calcium_session_table.loc[i, 'id'] = calcium_session_info[i]['id']
+    calcium_session_table.loc[i, 'donor_name'] = calcium_session_info[i]['donor_name']
+# Get the id of the processed data
+processed_data_id = [int(f.stem) for f in data_path.glob('calcium_excitatory/*/*.mat')]
+# Filter the session table
+filtered_calcium_session_table = calcium_session_table[calcium_session_table['id'].isin(processed_data_id)]
+# Compute the unique number of specimen_id = donor_name
+filtered_calcium_session_table.donor_name.nunique()
+# 193 mice, with multuple sessions
 
 # Checked area-wise neuron counts across all neuropixels sessions to pick the
 # single mouse with the most balanced coverage (highest minimum count across
