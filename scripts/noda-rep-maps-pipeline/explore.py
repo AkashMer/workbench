@@ -163,3 +163,19 @@ for i in range(30):
     axes[i].axis('off')
 plt.tight_layout()
 # The car appears around bins 9, 10, 11
+
+# Checked area-wise neuron counts across all neuropixels sessions to pick the
+# single mouse with the most balanced coverage (highest minimum count across
+# all 8 areas -- the "weakest link" that bottlenecks map precision):
+#
+#              mouse_id  VISp  VISl  VISal  VISpm  VISrl  VISam  LGd   LP   min  total
+# session_id
+# 755434585    730760270   75    39     42     62     49     94   44   27    27    432
+# 756029989    734865738   51    30     51     90     24     72   60   27    24    405
+# 750749662    726162197   52    20     46     64     41     64   82  142    20    511
+# 719161530    703279284   52    40      9     18     10     37   71   28     9    265
+# 791319847    769360779   93    56     43     17     58     49    8    9     8    333
+#
+# Picked session 755434585 / mouse 730760270 -- every area has >= 27 neurons,
+# 432 neurons total, and behavior data (pupil + running speed summary stats)
+# is fully clean (0% NaN).
