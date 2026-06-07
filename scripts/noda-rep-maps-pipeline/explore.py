@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import itertools
 import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.spatial.distance import cdist
 from sklearn.decomposition import PCA
 import os
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
@@ -213,63 +215,116 @@ print(calcium_area_wise[(calcium_area_wise[brain_areas[:6]] > 0).all(axis=1)].to
 
 # Final verdict
 # Picked session 755434585 / mouse 730760270: every area has >= 27 neurons,
-# 432 neurons total, and behavior data (pupil + running speed summary stats)
-# is fully clean (0% NaN)
+# 432 neurons total
 
-# Bin the neuropixel data
-binned_VISp = np.zeros((68, 30, 60))
-# General logic
-# Divide the session into 30 repeats x 30 bins x 30 frames x 2 blocks
-reshaped_data = np.reshape(neuropixels_data[0], (68, 30, 30, 30, 2))
-# Average frames across bins
-binned_data = np.mean(reshaped_data, axis = 3)
-# Transpose to change the structure to neurons x bins x repeats x blocks
-binned_data = np.transpose(binned_data, (0, 2, 1, 3))
-# Join data for 2 blocks
-binned_VISp = np.reshape(binned_data, (68, 30, 60))
-# Confirm
-print(binned_VISp.shape)
-# neurons x bins x trials
+# Check behavioral data for the session_755434585
+# 1. Define the path
+data_file_path = data_path / "neuropixels" / "session_755434585.mat"
 
-# Build RSM for each area
-# Using trial to trial correlations instead of averaging across trials
-rsms = {}
-for i, area in enumerate(brain_areas):
+# 2. Load the file
+data = read_mat(data_file_path)
 
-    if(neuropixels_data[i].size > 0):
-        n_neurons = neuropixels_data[i].shape[0]
-        n_bins = 30
-        n_trials = 60
-        
-        # Bin the data
-        reshaped_data = np.reshape(neuropixels_data[i], (n_neurons, n_bins, n_bins, n_bins, 2))
-        binned_data = np.mean(reshaped_data, axis = 3)
-        binned_data = np.transpose(binned_data, (0, 2, 1, 3))
-        binned_data = np.reshape(binned_data, (n_neurons, n_bins, n_trials))
-        
-        # Build the RSM
-        res = np.zeros((n_bins, n_bins))
-        cors = np.corrcoef(binned_data.reshape(n_neurons, n_bins*n_trials), rowvar=False)
-        for j,k in itertools.product(range(n_bins), range(n_bins)):
-            res[j,k] = np.mean(cors[j*n_trials:(j+1)*n_trials, k*n_trials:(k+1)*n_trials])
-        rsms[area] = res
+# Get the mean pupil size, position and mean running speed for movie type 1
+mean_pupil_size = data['mean_pupil_size_repeats'][0]
+mean_pupil_size.shape
+mean_running_speed = data['mean_running_speed_repeats'][0]
+mean_running_speed.shape
+# 10 repeats of 30 fps movie clip
+repeats = range(10)
 
-# Plot RSMs by area
-fig, axes = plt.subplots(2, 3)
+# Define a df to hold the behavioral data for plotting
+behavioral_metrics = (pd.concat([
+        pd.DataFrame(mean_pupil_size, columns=['Block 1', 'Block 2']).assign(metric='Mean Pupil Size'),
+        pd.DataFrame(mean_running_speed,  columns=['Block 1', 'Block 2']).assign(metric='Mean Running Speed')
+    ])
+    .reset_index(names='repeat')
+    .melt(id_vars = ['repeat', 'metric'], value_vars = ['Block 1', 'Block 2'],
+            var_name = 'block', value_name = 'value')
+)
+
+# Plot in a Seaborn grid
+g = sns.FacetGrid(behavioral_metrics, row = 'metric', sharey = False, height = 3, aspect = 2.5)
+g.map_dataframe(sns.lineplot, x='repeat', y='value', hue='block', marker='o')
+g.add_legend()
+# There is quite a difference between 2 blocks
+block1_means = behavioral_metrics[behavioral_metrics['block'] == 'Block 1'].groupby('metric')['value'].mean()
+for ax, metric in zip(g.axes.flat, block1_means.index):
+    ax.axhline(block1_means[metric], linestyle='--', alpha=0.5, color='blue')
+# Both blocks are recorded under 2 different behavioral states; with block 1 showing stationary condition
+
+# Get the neural activity data for block 1
+neuropixels_data = [area[:, :, 0] for area in data['informative_rater_mat'][0][:8]]
+# Define the number of bins
+n_bins = 30
+# Define the number of trials
+n_trials = 10
+# Initialize a population reponse space variable
+rdms = {}
+# Bin the data in each area and compute the RDM
+for idx, area in enumerate(brain_areas):
+    # Get the number of neurons
+    n_neurons = neuropixels_data[idx].shape[0]
+    # Reshape into 10 repeats x 30 bins x 30 frames
+    reshaped_data = np.reshape(neuropixels_data[idx], (n_neurons, n_trials, n_bins, n_bins))
+    # Average out the frame
+    binned_data = np.mean(reshaped_data, axis = 3)
+    # Transpose to change the structure to bins x repeats x neurons
+    binned_data = np.transpose(binned_data, (2, 1, 0))
+    # Flatten bins and repeats for cdist function
+    binned_data = np.reshape(binned_data, (n_bins * n_trials, n_neurons))
+
+    # Compute the dissimilarity matrix
+    dist_matrix = cdist(binned_data, binned_data, metric='correlation')
+
+    # Flip to a similarity matrix
+    similarity_matrix = 1 - dist_matrix
+
+    # Block the diagonal to preserve trial-to-trial reliability measure
+    for i in range(n_bins):
+        block = similarity_matrix[i*n_trials:(i+1)*n_trials, i*n_trials:(i+1)*n_trials]
+        np.fill_diagonal(block, np.nan)
+
+    # Fisher Z transforamtion to average correlation within bins
+    z_matrix = np.arctanh(similarity_matrix)
+
+    # Averge within bins
+    res = np.zeros((n_bins, n_bins))
+    for j, k in itertools.product(range(n_bins), range(n_bins)):
+        block = z_matrix[j*n_trials:(j+1)*n_trials, k*n_trials:(k+1)*n_trials]
+        if j == k:
+            res[j, k] = np.nanmean(block)
+        else:
+            res[j, k] = np.mean(block)
+
+
+    # Transform back to correlations
+    rsm = np.tanh(res)
+
+    # Convert to dissimilarity matrix
+    rdm = 1 - res
+
+    # Save the result
+    rdms[area] = pd.DataFrame(rdm, index = range(n_bins), columns=range(n_bins))
+
+
+# Plot RDMs by area
+fig, axes = plt.subplots(2, 4)
 axes = axes.flatten()
 plot_idx = 0
-for item in rsms:
-    axes[plot_idx].imshow(rsms[item], cmap = "RdBu")
+for item in rdms:
+    sns.heatmap(rdms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True, robust=True)
     axes[plot_idx].set_title(item)
+    axes[plot_idx].set_xticks([])
+    axes[plot_idx].set_yticks([])
     plot_idx += 1
 
 # Dimension reduction
 pca = PCA(n_components=2)
-fig, axes = plt.subplots(2, 3)
+fig, axes = plt.subplots(2, 4)
 axes = axes.flatten()
 plot_idx = 0
-for item in rsms:
-    dem_red = pca.fit_transform(rsms[item])
+for item in rdms:
+    dem_red = pca.fit_transform(rdms[item])
     axes[plot_idx].scatter(dem_red[:,0], dem_red[:,1])
     axes[plot_idx].set_title(item)
     plot_idx += 1
@@ -294,11 +349,11 @@ stimulus_dem_red = pca.fit_transform(pixel_similarity)
 stimulus_clusters = KMeans(n_clusters = 2).fit_predict(stimulus_dem_red)
 
 # Use the pc1 dimension to provide groups to the reponse PCA
-fig, axes = plt.subplots(2, 3)
+fig, axes = plt.subplots(2, 4)
 axes = axes.flatten()
 plot_idx = 0
-for item in rsms:
-    dem_red = pca.fit_transform(rsms[item])
+for item in rdms:
+    dem_red = pca.fit_transform(rdms[item])
     axes[plot_idx].scatter(dem_red[:,0], dem_red[:,1], c=stimulus_clusters, cmap = 'viridis')
     axes[plot_idx].set_title(item)
     plot_idx += 1

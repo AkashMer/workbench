@@ -12,9 +12,9 @@ visual stimuli: drifting gratings, natural images and natural movies.
 During this time, neural activity was recorded using two-photon calcium
 imaging and Neuropixels probes in two different cohorts of mice. The
 following analysis is limited to sessions when the stimulus was Natural
-Movie 1. The stimulus are presented repeatedly. The Neuropixels
-recording sessions are divided in 2 blocks: - Block 1: Natural Movie 1 -
-Block 2: Natural Movie 1 shuffled
+Movie 1. The stimulus is presented repeatedly. The Neuropixels recording
+sessions include two movie types: - Natural Movie 1 - Natural Movie 1
+shuffled
 
 **Ethological significance of Natural Movie 1**: Natural movie 1 is a
 ~30 second black-and-white movie clip from the film *Touch of Evil*.
@@ -224,7 +224,7 @@ implying 1 session per mouse.
 
 ### Per-Mouse Neuron Coverage
 
-#### Calcium Im
+#### Calcium Imaging (Excitatory)
 
 <details class="code-fold">
 <summary>Code</summary>
@@ -255,7 +255,7 @@ calcium_area_wise = (
                                             .apply(list).reset_index(),
             how = 'left', on = 'donor_name')
 )
-# Convvert number of neurons to int type
+# Convert number of neurons to int type
 calcium_area_wise[brain_areas[:6]] = calcium_area_wise[brain_areas[:6]].astype(int)
 # Order by maximum number of areas covered per mice
 calcium_area_wise = (
@@ -267,8 +267,9 @@ calcium_area_wise = (
     .rename_axis('Donor ID')
     .rename(columns = {'total':'Total'})
 )
-# Display the top 5
-calcium_area_wise[brain_areas[:6] + ['Total']].head()
+# Display the the best 2 and worst 2
+pd.concat([calcium_area_wise[brain_areas[:6] + ['Total']].head(2),
+            calcium_area_wise[brain_areas[:6] + ['Total']].tail(2)])
 ```
 
 </details>
@@ -291,10 +292,151 @@ calcium_area_wise[brain_areas[:6] + ['Total']].head()
 | Donor ID |      |      |       |       |       |       |       |
 | 323982   | 163  | 90   | 0     | 143   | 0     | 0     | 396   |
 | 309689   | 21   | 11   | 30    | 0     | 0     | 0     | 62    |
-| 348105   | 69   | 120  | 0     | 159   | 0     | 0     | 348   |
-| 268133   | 0    | 0    | 0     | 250   | 326   | 241   | 817   |
-| 340467   | 0    | 0    | 310   | 157   | 0     | 133   | 600   |
+| 315297   | 41   | 0    | 0     | 0     | 0     | 0     | 41    |
+| 221470   | 237  | 0    | 0     | 0     | 0     | 0     | 237   |
 
 </div>
 
-None of the subjects under this modality had all the areas covered.
+None of the subjects under this modality had all the areas covered. The
+above table shows the 2 best and worst candidates with all area
+coverage. \[@Noda_2024-03-22\] advises ideal cohort size for a
+representational map estimation to be 1 if sufficient number of neurons
+are recorded. One of the goals of this analysis is to portray various
+properties of a representational map defined in \[@Noda_2024-03-22\].
+The hierarchical nature of representational maps cannot be shown in the
+case of the above calcium imaging data due to lack of coverage of all
+areas in a single subject. Thus, it was excluded from the analysis.
+
+#### Neuropixels
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# How many neurons recorded per mice per session?
+neuropixels_area_wise = pd.DataFrame(columns=['session_id'] + brain_areas, index = range(58))
+idx = 0
+for f in data_path.glob('neuropixels/*.mat'):
+    load_file = read_mat(f)
+    neuropixels_area_wise.loc[idx, 'session_id'] = int(f.stem.replace('session_', ''))
+    for num, area in enumerate(brain_areas):
+        if load_file['informative_rater_mat'][0][num].size > 0:
+            neuropixels_area_wise.loc[idx, area] = load_file['informative_rater_mat'][0][num].shape[0]
+        else:
+            neuropixels_area_wise.loc[idx, area] = 0
+    idx +=1
+# Combine both mouse id info and this area wise neurons into one table
+neuropixels_area_wise = (
+    neuropixels_area_wise.merge(neuropixels_session_table[['id', 'specimen_id']], how='left', left_on='session_id', right_on='id')
+    .drop(columns='id')
+    .set_index('session_id')
+    .pipe(lambda df: df.assign(**{a: pd.to_numeric(df[a]) for a in brain_areas}))
+    .query(' and '.join([f'{a} > 0' for a in brain_areas]))
+    # Sort by minimum neuron count across cortical areas only (thalamic areas excluded)
+    .assign(min=lambda x: x[brain_areas[:6]].min(axis = 1))
+    .sort_values('min', ascending=False)
+    .drop(columns = 'min')
+    .assign(total=lambda x: x[brain_areas].sum(axis = 1).astype(int))
+    .set_index('specimen_id')
+    .rename_axis('Specimen ID')
+    .rename(columns = {'total':'Total'})
+)
+# Order the columns and display the best 2 and worst 2
+pd.concat([neuropixels_area_wise[brain_areas + ['Total']].head(2),
+            neuropixels_area_wise[brain_areas + ['Total']].tail(2)])
+```
+
+</details>
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+&#10;    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+&#10;    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+
+|             | VISp | VISl | VISal | VISpm | VISrl | VISam | LGd | LP  | Total |
+|-------------|------|------|-------|-------|-------|-------|-----|-----|-------|
+| Specimen ID |      |      |       |       |       |       |     |     |       |
+| 730760270   | 75   | 39   | 42    | 62    | 49    | 94    | 44  | 27  | 432   |
+| 734865738   | 51   | 30   | 51    | 90    | 24    | 72    | 60  | 27  | 405   |
+| 760938797   | 85   | 62   | 82    | 68    | 13    | 77    | 2   | 51  | 440   |
+| 703279284   | 52   | 40   | 9     | 18    | 10    | 37    | 71  | 28  | 265   |
+
+</div>
+
+Several mice had complete coverage of all 8 areas. The above table was
+sorted by the minimum cortical neuron count, excluding thalamic areas
+(LGd, LP) which are consistently harder to record. It shows the 2 best
+and worst candidates. Session `755434585` / Mouse `730760270` was picked
+for applying the estimation pipeline since it had a sufficient number of
+neurons in all areas with total number of neurons sitting within the
+range of 100s to tens of thousands advised in \[@Noda_2024-03-22\].
+
+## Behavioral State
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Define the data file chosen for analysis
+data_file = 'session_755434585.mat'
+# Load the processed data
+data = read_mat(data_path / "neuropixels" / data_file)
+
+# Extract the mean_pupil_size for Natural Movie 1
+mean_pupil_size = data['mean_pupil_size_repeats'][0]
+# Extract the mean running speed for Natural Movie 1
+mean_running_speed = data['mean_running_speed_repeats'][0]
+
+# Define a df to hold the behavioral data for plotting
+behavioral_metrics = (pd.concat([
+        pd.DataFrame(mean_pupil_size, columns=['Block 1', 'Block 2']).assign(metric='Mean Pupil Size'),
+        pd.DataFrame(mean_running_speed,  columns=['Block 1', 'Block 2']).assign(metric='Mean Running Speed')
+    ])
+    .reset_index(names='repeat')
+    .melt(id_vars = ['repeat', 'metric'], value_vars = ['Block 1', 'Block 2'],
+            var_name = 'block', value_name = 'value')
+)
+
+# Plot in a Seaborn grid
+g = sns.FacetGrid(behavioral_metrics, row = 'metric', sharey = False, height = 3, aspect = 2.5)
+g.map_dataframe(sns.lineplot, x='repeat', y='value', hue='block', marker='o')
+g.add_legend()
+g.set_axis_labels(x_var='Repeat', y_var='')
+g.set_titles(row_template='{row_name}')
+# Define the y-axis unit labels
+y_labels = {'Mean Pupil Size': 'a.u.', 'Mean Running Speed': 'cm/s'}
+# Plot the mean value line for block 1 to appreciate the difference between 2 conditions
+block1_means = behavioral_metrics[behavioral_metrics['block'] == 'Block 1'].groupby('metric')['value'].mean()
+for ax, metric in zip(g.axes.flat, block1_means.index):
+    ax.axhline(block1_means[metric], linestyle='--', alpha=0.5, color='blue')
+    ax.set_ylabel(y_labels[metric])
+```
+
+</details>
+
+<div id="fig-behavioral_state">
+
+![](noda-rep-maps-pipeline_files/figure-commonmark/fig-behavioral_state-output-1.png)
+
+Figure 2: Behavioral State Comparison of 2 Blocks in Session 755434585
+(Mouse ID - 730760270)
+
+</div>
+
+Both blocks were recorded under different behavioral states:
+
+- **Block 1**: Stationary state
+- **Block 2**: Actively running and pupils dilated
+
+Only data from Block 1 will be used for further analysis since
+behavioral state should be standardized across
+trials\[@Noda_2024-03-22\]. Block 2 data will be explored in a future
+analysis.
