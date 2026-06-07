@@ -44,6 +44,9 @@ The mean cross-trial reliability will be computed from cross-trial correlations 
 
 import warnings
 warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
+warnings.filterwarnings('ignore', category=UserWarning, module='allensdk')
+warnings.filterwarnings('ignore', category=RuntimeWarning, module='threadpoolctl')
+warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
 import os
 from pathlib import Path
 import numpy as np
@@ -53,6 +56,9 @@ from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProj
 from allensdk.core.brain_observatory_cache import BrainObservatoryCache
 import matplotlib.pyplot as plt
 import seaborn as sns
+from scipy.stats import rankdata
+from scipy.spatial.distance import cdist
+import itertools
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 ```
@@ -265,26 +271,43 @@ neuropixels_area_wise = (
     .sort_values('min', ascending=False)
     .drop(columns = 'min')
     .assign(total=lambda x: x[brain_areas].sum(axis = 1).astype(int))
-    .set_index('specimen_id')
-    .rename_axis('Specimen ID')
-    .rename(columns = {'total':'Total'})
+    .rename_axis('Session ID')
+    .rename(columns = {'specimen_id':'Specimen ID', 'total':'Total'})
 )
 # Order the columns and display the best 2 and worst 2
-pd.concat([neuropixels_area_wise[brain_areas + ['Total']].head(2),
-            neuropixels_area_wise[brain_areas + ['Total']].tail(2)])
+pd.concat([neuropixels_area_wise[['Specimen ID'] + brain_areas + ['Total']].head(2),
+            neuropixels_area_wise[['Specimen ID'] + brain_areas + ['Total']].tail(2)])
 ```
 
-Several mice had complete coverage of all 8 areas. The above table was sorted by the minimum cortical neuron count, excluding thalamic areas (LGd, LP) which are consistently harder to record. It shows the 2 best and worst candidates. Session `755434585` / Mouse `730760270` was picked for applying the estimation pipeline since it had a sufficient number of neurons in all areas with total number of neurons sitting within the range of 100s to tens of thousands advised in [@Noda_2024-03-22].  
+Several mice had complete coverage of all 8 areas. The above table was sorted by the minimum cortical neuron count, excluding thalamic areas (LGd, LP) which are consistently harder to record. It shows the 2 best and worst candidates. Session `755434585` / Mouse `730760270` and Session `756029989` / Mouse `734865738` were picked for applying the estimation pipeline since both had sufficient number of neurons in all areas with total number of neurons sitting within the range of 100s to tens of thousands advised in [@Noda_2024-03-22].  
 
 ## Behavioral State
+
+Global brain states affect representational map estimates by suppressing elements or shifting their positions. Standardizing experimental conditions or measuring brain state explicitly is advised[@Noda_2024-03-22]. The passive viewing design already standardizes the experimental context. Several behavioral metrics such as pupil size, position, width, movement and running speed are measured and reported in the dataset.  
+
+I inspected the block-wise behavioral profiles and RDM structure of the two top candidate sessions (`755434585` and `756029989`). The full block-by-block RDM comparison is shown in [Appendix A](#appendix-a).
+
+The key observations were:
+
+- **Session `755434585` Block 1**: Resting with constricted pupils majority of the time. The RDM showed minimal structure likely implying a drowsy state.
+- **Session `755434585` Block 2**: The mouse was actively running and RDM showed a richer structure.
+- **Session `755434585` combined blocks**: Combining both blocks (20 trials) reduced reliability measure produced from cross-trial correlation approach. This confirms that two blocks represent distinct brain states.
+- **Session `756029989` Block 1 and Block 2**: The RDM structure was rich and consistent across both blocks. The behavioral metrics were not so polar in this case.  
+
+Session `756029989` / Mouse `734865738` was selected since it satisfied the following criteria:
+
+- complete area coverage
+- non-drowsy behavioral state
+
+It is a suitable substrate for demonstrating the full estimation pipeline. Block 1 was used as the analysis block due to lower mean running speed.
 
 ```{python}
 #| code-fold: true
 #| label: fig-behavioral_state
-#| fig-cap: Behavioral State Comparison of 2 Blocks in Session 755434585 (Mouse ID - 730760270)
+#| fig-cap: Behavioral State Comparison of 2 Blocks in Session 756029989 (Mouse ID - 734865738)
 
 # Define the data file chosen for analysis
-data_file = 'session_755434585.mat'
+data_file = 'session_756029989.mat'
 # Load the processed data
 data = read_mat(data_path / "neuropixels" / data_file)
 
@@ -311,27 +334,80 @@ g.set_axis_labels(x_var='Repeat', y_var='')
 g.set_titles(row_template='{row_name}')
 # Define the y-axis unit labels
 y_labels = {'Mean Pupil Size': 'a.u.', 'Mean Running Speed': 'cm/s'}
-# Plot the mean value line for block 1 to appreciate the difference between 2 conditions
-block1_means = behavioral_metrics[behavioral_metrics['block'] == 'Block 1'].groupby('metric')['value'].mean()
-for ax, metric in zip(g.axes.flat, block1_means.index):
-    ax.axhline(block1_means[metric], linestyle='--', alpha=0.5, color='blue')
+for ax, metric in zip(g.axes.flat, y_labels):
     ax.set_ylabel(y_labels[metric])
-
 ```
-
-Both blocks were recorded under different behavioral states:
-
-- **Block 1**: Stationary state
-- **Block 2**: Actively running and pupils dilated
-
-Only data from Block 1 will be used for further analysis since behavioral state should be standardized across trials[@Noda_2024-03-22]. Block 2 data will be explored in a future analysis.
 
 ## High-Dimensional Population Response Space
 
 ```{python}
 #| code-fold: true
 #| label: fig-population-reponse-space
-#| fig-cap: Population Response Space for Block 1 of Session 755434585 (Mouse ID - 730760270)
+#| fig-cap: Population Response Space for Block 1 of Session 756029989 (Mouse ID - 734865738)
 
+# Get the neural activity data for block 1
+neuropixels_data = [area[:, :, 0] for area in data['informative_rater_mat'][0][:8]]
+# Define the number of bins
+n_bins = 30
+# Define the number of trials
+n_trials = 10
+# Initialize a population reponse space variable
+rdms = {}
+# Bin the data in each area and compute the RDM
+for idx, area in enumerate(brain_areas):
+    # Get the number of neurons
+    n_neurons = neuropixels_data[idx].shape[0]
+    # Reshape into 10 repeats x 30 bins x 30 frames
+    reshaped_data = np.reshape(neuropixels_data[idx], (n_neurons, n_trials, n_bins, n_bins))
+    # Average out the frame
+    binned_data = np.mean(reshaped_data, axis = 3)
+    # Transpose to change the structure to bins x repeats x neurons
+    binned_data = np.transpose(binned_data, (2, 1, 0))
+    # Flatten bins and repeats for cdist function
+    binned_data = np.reshape(binned_data, (n_bins * n_trials, n_neurons))
 
+    # Rank each population vector (Spearman = Pearson on ranks)
+    ranked_data = np.apply_along_axis(rankdata, 1, binned_data)
+    # Compute the dissimilarity matrix using Spearman rank correlation
+    dist_matrix = cdist(ranked_data, ranked_data, metric='correlation')
+
+    # Flip to a similarity matrix
+    similarity_matrix = 1 - dist_matrix
+
+    # Block the diagonal to preserve trial-to-trial reliability measure
+    for i in range(n_bins):
+        block = similarity_matrix[i*n_trials:(i+1)*n_trials, i*n_trials:(i+1)*n_trials]
+        np.fill_diagonal(block, np.nan)
+
+    # Fisher Z transforamtion to average correlation within bins
+    z_matrix = np.arctanh(similarity_matrix)
+
+    # Averge within bins
+    res = np.zeros((n_bins, n_bins))
+    for j, k in itertools.product(range(n_bins), range(n_bins)):
+        block = z_matrix[j*n_trials:(j+1)*n_trials, k*n_trials:(k+1)*n_trials]
+        if j == k:
+            res[j, k] = np.nanmean(block)
+        else:
+            res[j, k] = np.mean(block)
+
+    # Transform back to correlations
+    rsm = np.tanh(res)
+
+    # Convert to dissimilarity matrix
+    rdm = 1 - rsm
+
+    # Save the result
+    rdms[area] = pd.DataFrame(rdm, index = range(n_bins), columns=range(n_bins))
+
+# Plot RDMs by area
+fig, axes = plt.subplots(2, 4, figsize = (16,9))
+axes = axes.flatten()
+plot_idx = 0
+for item in rdms:
+    sns.heatmap(rdms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True)
+    axes[plot_idx].set_title(item, fontsize = 20)
+    axes[plot_idx].set_xticks([])
+    axes[plot_idx].set_yticks([])
+    plot_idx += 1
 ```

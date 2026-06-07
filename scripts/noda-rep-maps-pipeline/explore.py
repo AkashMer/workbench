@@ -7,6 +7,7 @@ import itertools
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial.distance import cdist
+from scipy.stats import rankdata
 from sklearn.decomposition import PCA
 import os
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
@@ -273,8 +274,10 @@ for idx, area in enumerate(brain_areas):
     # Flatten bins and repeats for cdist function
     binned_data = np.reshape(binned_data, (n_bins * n_trials, n_neurons))
 
-    # Compute the dissimilarity matrix
-    dist_matrix = cdist(binned_data, binned_data, metric='correlation')
+    # Rank each population vector (Spearman = Pearson on ranks)
+    ranked_data = np.apply_along_axis(rankdata, 1, binned_data)
+    # Compute the dissimilarity matrix using Spearman rank correlation
+    dist_matrix = cdist(ranked_data, ranked_data, metric='correlation')
 
     # Flip to a similarity matrix
     similarity_matrix = 1 - dist_matrix
@@ -296,23 +299,24 @@ for idx, area in enumerate(brain_areas):
         else:
             res[j, k] = np.mean(block)
 
+    # Enforce symmetry (floating point noise from block averaging)
+    res = (res + res.T) / 2
 
     # Transform back to correlations
     rsm = np.tanh(res)
 
     # Convert to dissimilarity matrix
-    rdm = 1 - res
+    rdm = 1 - rsm
 
     # Save the result
     rdms[area] = pd.DataFrame(rdm, index = range(n_bins), columns=range(n_bins))
-
 
 # Plot RDMs by area
 fig, axes = plt.subplots(2, 4)
 axes = axes.flatten()
 plot_idx = 0
 for item in rdms:
-    sns.heatmap(rdms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True, robust=True)
+    sns.heatmap(rdms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True)
     axes[plot_idx].set_title(item)
     axes[plot_idx].set_xticks([])
     axes[plot_idx].set_yticks([])
