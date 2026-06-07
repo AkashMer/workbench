@@ -90,7 +90,7 @@ data['mean_pupil_movement_repeats'][1].shape
 # 10 repeats, 2 blocks
 # Limiting myself to Natural Movie 1 for now
 # The Shuffled part is most likely control for the experiement
-# Define the area names
+# Define the area names as per visual_drift analysis
 brain_areas = ['VISp','VISl','VISal','VISpm','VISrl','VISam','LGd','LP']
 # Get data for all areas and movie 1
 neuropixels_data = data['informative_rater_mat'][0]
@@ -98,6 +98,123 @@ neuropixels_data = data['informative_rater_mat'][0]
 for i, area in enumerate(brain_areas):
     print(area, neuropixels_data[i].shape)
 # Some are empty
+
+# Compute the cohort size of neuropixels modality
+manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')
+cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
+# Get the number of unique mice in the Neuropixels data
+neuropixels_session_table = cache.get_session_table()
+neuropixels_session_table.columns
+# The session_id most likely is the index id
+neuropixels_session_table = neuropixels_session_table.reset_index()
+neuropixels_session_table.columns
+neuropixels_session_table.id
+len(neuropixels_session_table.id)
+# Matches the file names and the number of neuropixels files
+# Compute the unique number of specimen_ids
+neuropixels_session_table.specimen_id.nunique()
+# Each session is equivalent to each mice. 58 total
+
+# How many neurons recorded per mice per session?
+neuropixels_area_wise = pd.DataFrame(columns=['session_id'] + brain_areas, index = range(58))
+idx = 0
+for f in data_path.glob('neuropixels/*.mat'):
+    load_file = read_mat(f)
+    neuropixels_area_wise.loc[idx, 'session_id'] = int(f.stem.replace('session_', ''))
+    for num, area in enumerate(brain_areas):
+        if load_file['informative_rater_mat'][0][num].size > 0:
+            neuropixels_area_wise.loc[idx, area] = load_file['informative_rater_mat'][0][num].shape[0]
+        else:
+            neuropixels_area_wise.loc[idx, area] = 0
+    idx +=1
+# Combine both mouse id info and this area wise neurons into one table
+neuropixels_area_wise = (
+    neuropixels_area_wise.merge(neuropixels_session_table[['id', 'specimen_id']], how='left', left_on='session_id', right_on='id')
+    .drop(columns='id')
+    .set_index('session_id')
+    # Sort by mice with the lowest minimum in across all areas in descending order
+    .assign(min=lambda x: x[brain_areas].min(axis = 1))
+    .sort_values('min', ascending=False)
+    .drop(columns = 'min')
+    .assign(total=lambda x: x[brain_areas].sum(axis = 1).astype(int))
+)
+# Order the columns and display
+print(neuropixels_area_wise[['specimen_id'] + brain_areas + ['total']].head().to_string())
+#             specimen_id VISp VISl VISal VISpm VISrl VISam LGd   LP  total
+# session_id                                                               
+# 755434585     730760270   75   39    42    62    49    94  44   27    432
+# 756029989     734865738   51   30    51    90    24    72  60   27    405
+# 750749662     726162197   52   20    46    64    41    64  82  142    511
+# 719161530     703279284   52   40     9    18    10    37  71   28    265
+# 791319847     769360779   93   56    43    17    58    49   8    9    333
+
+# Compute the cohort size of calcium_excitatory modality
+manifest_path_cal = os.path.join(os.path.expanduser('~'), 'allen_cache_ophys', 'manifest.json')
+cache_cal = BrainObservatoryCache(manifest_file=manifest_path_cal)
+calcium_session_info = cache_cal.get_experiment_containers()
+calcium_session_table = pd.DataFrame(columns=["id", 'donor_name'], index=range(len(calcium_session_info)))
+for i in range(len(calcium_session_info)):
+    calcium_session_table.loc[i, 'id'] = calcium_session_info[i]['id']
+    calcium_session_table.loc[i, 'donor_name'] = calcium_session_info[i]['donor_name']
+# Get the id of the processed data
+processed_data_id = [int(f.stem) for f in data_path.glob('calcium_excitatory/*/*.mat')] # 336
+# Filter the session table
+filtered_calcium_session_table = calcium_session_table[calcium_session_table['id'].isin(processed_data_id)]
+# Compute the unique number of specimen_id = donor_name
+filtered_calcium_session_table.donor_name.nunique()
+# 193 mice, with multuple sessions
+
+# How many neurons recorded per mice per session?
+calcium_area_wise = pd.DataFrame(columns=['session_id', 'area', 'n_neurons'], index = range(336))
+idx = 0
+for f in data_path.glob('calcium_excitatory/**/*.mat'):
+    calcium_area_wise.loc[idx, 'session_id'] = int(f.stem)
+    calcium_area_wise.loc[idx, 'area'] = f.parent.name
+    load_file = read_mat(f)
+    calcium_area_wise.loc[idx, 'n_neurons'] = load_file['raw_pop_vector_info_trials'].shape[0]
+    idx+=1
+# Pivot to wide format and add mouse id info
+calcium_area_wise = (
+    calcium_area_wise
+    .merge(filtered_calcium_session_table, how = 'left',
+            left_on = 'session_id', right_on = 'id')
+    .drop(columns = 'id')
+    # Get the minimum number of neurons per area per mice
+    .pivot_table(index = 'donor_name', columns = 'area', values = 'n_neurons', aggfunc='min')
+    .fillna(0)
+    .merge(filtered_calcium_session_table.groupby('donor_name')['id']
+                                            .apply(list).reset_index(),
+            how = 'left', on = 'donor_name')
+)
+# Convvert number of neurons to int type
+calcium_area_wise[brain_areas[:6]] = calcium_area_wise[brain_areas[:6]].astype(int)
+# Order by minimum number of neurons per area per mice
+calcium_area_wise = (
+    calcium_area_wise.assign(min=lambda x: x[brain_areas[:6]].min(axis = 1))
+    .sort_values('min', ascending=False)
+    .drop(columns = 'min')
+    .assign(total=lambda x: x[brain_areas[:6]].sum(axis = 1).astype(int))
+)
+# Order the columns and display
+print(calcium_area_wise[['donor_name'] + brain_areas[:6] + ['total']].head().to_string())
+# donor_name  VISp  VISl  VISal  VISpm  VISrl  VISam  total
+# 0       221470   237     0      0      0      0      0    237
+# 97      307419     0     0      0      0     45      0     45
+# 123     337438     0     0      7      0      0      6     13
+# 124     337458   180     0      0      0      0      0    180
+# 125     338502     0     0      0      0    369      0    369
+# Do any mice have all areas recorded?
+print(calcium_area_wise[(calcium_area_wise[brain_areas[:6]] > 0).all(axis=1)].to_string())
+# Empty DataFrame
+# Columns: [donor_name, VISal, VISam, VISl, VISp, VISpm, VISrl, id, total]
+# Index: []
+# No single mouse has all areas recorded, which goes against the ideal situation
+# of one individual in the Noda paper
+
+# Final verdict
+# Picked session 755434585 / mouse 730760270: every area has >= 27 neurons,
+# 432 neurons total, and behavior data (pupil + running speed summary stats)
+# is fully clean (0% NaN)
 
 # Bin the neuropixel data
 binned_VISp = np.zeros((68, 30, 60))
@@ -159,8 +276,6 @@ for item in rsms:
 
 # Validate against the stimulus data
 # Download Natural Movie 1
-manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')
-cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
 movie = cache.get_natural_movie_template(1)
 print(movie.shape)
 # Bin movie frames into 30 one-second bins
@@ -198,49 +313,3 @@ for i in range(30):
     axes[i].axis('off')
 plt.tight_layout()
 # The car appears around bins 9, 10, 11
-
-# Compute the cohort size of neuropixels modality
-# Get the number of unique mice in the Neuropixels data
-neuropixels_session_table = cache.get_session_table()
-neuropixels_session_table.columns
-# The session_id most likely is the index id
-neuropixels_session_table = neuropixels_session_table.reset_index()
-neuropixels_session_table.columns
-neuropixels_session_table.id
-len(neuropixels_session_table.id)
-# Matches the file names and the number of neuropixels files
-# Compute the unique number of specimen_ids
-neuropixels_session_table.specimen_id.nunique()
-# Each session is equivalent to each mice. 58 total
-
-# Compute the cohort size of calcium_excitatory modality
-manifest_path_cal = os.path.join(os.path.expanduser('~'), 'allen_cache_ophys', 'manifest.json')
-cache_cal = BrainObservatoryCache(manifest_file=manifest_path_cal)
-calcium_session_info = cache_cal.get_experiment_containers()
-calcium_session_table = pd.DataFrame(columns=["id", 'donor_name'], index=range(len(calcium_session_info)))
-for i in range(len(calcium_session_info)):
-    calcium_session_table.loc[i, 'id'] = calcium_session_info[i]['id']
-    calcium_session_table.loc[i, 'donor_name'] = calcium_session_info[i]['donor_name']
-# Get the id of the processed data
-processed_data_id = [int(f.stem) for f in data_path.glob('calcium_excitatory/*/*.mat')]
-# Filter the session table
-filtered_calcium_session_table = calcium_session_table[calcium_session_table['id'].isin(processed_data_id)]
-# Compute the unique number of specimen_id = donor_name
-filtered_calcium_session_table.donor_name.nunique()
-# 193 mice, with multuple sessions
-
-# Checked area-wise neuron counts across all neuropixels sessions to pick the
-# single mouse with the most balanced coverage (highest minimum count across
-# all 8 areas -- the "weakest link" that bottlenecks map precision):
-#
-#              mouse_id  VISp  VISl  VISal  VISpm  VISrl  VISam  LGd   LP   min  total
-# session_id
-# 755434585    730760270   75    39     42     62     49     94   44   27    27    432
-# 756029989    734865738   51    30     51     90     24     72   60   27    24    405
-# 750749662    726162197   52    20     46     64     41     64   82  142    20    511
-# 719161530    703279284   52    40      9     18     10     37   71   28     9    265
-# 791319847    769360779   93    56     43     17     58     49    8    9     8    333
-#
-# Picked session 755434585 / mouse 730760270 -- every area has >= 27 neurons,
-# 432 neurons total, and behavior data (pupil + running speed summary stats)
-# is fully clean (0% NaN).
