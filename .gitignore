@@ -3,6 +3,7 @@ data/*
 .ipynb_checkpoints/
 .Rproj.user/
 .quarto/
+.jupyter_cache/
 *.quarto_ipynb*
 *_files/
 /_site/

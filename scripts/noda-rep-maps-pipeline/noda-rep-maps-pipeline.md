@@ -1,6 +1,6 @@
 # undecided
 Dr. Akash Mer
-2026-06-06
+2026-06-07
 
 ## Stimulus Description
 
@@ -12,8 +12,9 @@ visual stimuli: drifting gratings, natural images and natural movies.
 During this time, neural activity was recorded using two-photon calcium
 imaging and Neuropixels probes in two different cohorts of mice. The
 following analysis is limited to sessions when the stimulus was Natural
-Movie 1. The stimulus are presented repeatedly and grouped in blocks per
-session.
+Movie 1. The stimulus are presented repeatedly. The Neuropixels
+recording sessions are divided in 2 blocks: - Block 1: Natural Movie 1 -
+Block 2: Natural Movie 1 shuffled
 
 **Ethological significance of Natural Movie 1**: Natural movie 1 is a
 ~30 second black-and-white movie clip from the film *Touch of Evil*.
@@ -21,18 +22,27 @@ Thus the movie is more ethologically significant than gratings or
 images. The scene contains a perspective from a human filming which
 might limit its ideal ethological definition from a mouse’s perspective.
 
-**Brain areas**: The brain areas recorded were VISp, VISl, VISal, VISpm,
-VISrl, VISam, LGd, LP which match the visual perception circuitry in
-mice.
+**Brain areas**: The brain areas recorded were:
+
+- *Primary Visual Cortex*: VISp
+- *Higher Visual Areas*:
+  - *Lateral Visual Area*: VISl
+  - *Anterolateral Visual Area*: VISal
+  - *Posteromedial Visual Area*: VISpm
+  - *Rostrolateral Visual Area*: VISrl
+  - *Anteromedial Visual Area*: VISam
+- *Thalamic areas*:
+  - *Dorsal part of the Lateral Geniculate complex*: LGd
+  - *Lateral Posterior nucleus*: LP
+
+These areas match the visual perception circuitry in mice.
 
 **Context of the recorded activity**: All sessions were recorded under
-similar conditions of passive viewing and the same recording paradigm.
-Both datasets also include behavioral state measures: pupil metrics
-(movement, position, size, width) and running speed. I plan to compare
-the pupil size and movement and running speed to mean cross-trial
-reliability of the population response to gauge how reliably each
-block/session represents the stimulus.  
-<!--
+similar conditions of passive viewing and the same recording paradigm
+which reduces the effect of global brain states. Both datasets also
+include behavioral state measures: pupil metrics (movement, position,
+size, and width) and running speed. <!--
+I plan to compare the pupil size and movement and running speed to mean cross-trial reliability of the population response to gauge how reliably each block/session represents the stimulus. 
 The mean cross-trial reliability will be computed from cross-trial correlations instead of averaging across trials. Session weights for the final representational map will be informed by both the number of neurons recorded in each area and each session's cross-trial reliability(if confirmed by behavioral co-variance).
 -->
 
@@ -40,16 +50,19 @@ The mean cross-trial reliability will be computed from cross-trial correlations 
 <summary>Imports</summary>
 
 ``` python
+import warnings
+warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
 import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
 from pymatreader import read_mat
+from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
+from allensdk.core.brain_observatory_cache import BrainObservatoryCache
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
-from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 ```
 
 </details>
@@ -77,7 +90,7 @@ stimulus_pca = pca.fit_transform(pixel_similarity)
 
 # Check how the movie gets separated for 2 clusters
 stimulus_clusters = KMeans(n_clusters=2, random_state=23).fit_predict(stimulus_pca)
-# Deine color for 2 clusters
+# Define color for 2 clusters
 cluster_palette = sns.color_palette('Dark2', n_colors=2)
 
 # Shared Styling
@@ -136,78 +149,126 @@ Figure 1: Stimulus Structure
 
 </div>
 
-The movie was binned using the same binning structure as the processed
-data. I computed binwise pixel correlation which showed 2 distinct
-regions around bins 9-12. This prompted me to apply KMeans
-clustering(k=2) to the PCA of the correlation matrix to visualize the
-structure. The movie clustered into two structurally distinct halves
-which I can use for validation of my neural representational map. I
-guessed two clusters before seeing the movie clip and the frame-by-frame
-check of the bins gave the context for the 2 clusters. A car becomes
-clearly visible around bins 9-12 preceded by a motion blur implying a
-clear scene change.
+Natural Movie 1 was played at 30 fps thus the movie frames was binned to
+one-second bins with 30 frames per bin. Binwise pixel correlation was
+computed and showed 2 distinct regions around bins 9-12. This prompted
+me to apply KMeans clustering(k=2) to the PCA of the correlation matrix
+to visualize the structure. I guessed two clusters before seeing the
+movie clip based on binwise pixel correlation heatmap. The movie
+clustered into two structurally distinct halves which can be used for
+validation of the neural representational map. The frame-by-frame check
+of the bins gave the context for the 2 clusters. A car becomes clearly
+visible around bins 9-12 preceded by a motion blur implying a clear
+scene change.
 
-## Cohort Size and Neural Population Statistics
+## Data Structure
+
+### Preprocessed Data Structure
+
+| **Modality** | **Variable Name** | **Structure** |
+|----|----|----|
+| *Calcium (Excitatory)* | `raw_pop_vector_info_trials` | `n` neurons $\times$ `30` bins $\times$ `30` trials |
+| *Calcium (Inhibitory)* | `united_traces_days_events` | `n` neurons $\times$ `n` frames $\times$ `3` days |
+| *Neuropixels* | `informative_rater_mat` | `n` neurons $\times$ `n` frames $\times$ `2` blocks |
+
+Calcium (Inhibitory) data is excluded since it is stored as unbinned raw
+traces. I am unaware of how to use the interneuron data as an input to
+the representational map. Neuropixels data is also unbinned and will be
+binned during preprocessing.
 
 ### Cohort Size
-
-| **Modality**                 | **Unique Mice** |
-|------------------------------|-----------------|
-| Calcium Imaging (Excitatory) | 193             |
-| Neuropixels                  | 58              |
-
-### Neurons recorded per area under each modality
-
-The minimum and maximum neurons recorded across all sessions for each
-modality and area:
 
 <details class="code-fold">
 <summary>Code</summary>
 
 ``` python
-# Order of brain areas as per upstream data processing
-brain_areas = ['VISp', 'VISl', 'VISal', 'VISpm', 'VISrl', 'VISam', 'LGd', 'LP']
-
-# Function to compute number of neurons in each area of the neuropixels data set
-def neuropixels_area_counts(stimulus_areas):
-    counts = {}
-    for area_name, area in zip(brain_areas, stimulus_areas):
-        if area.ndim == 3:
-            counts[area_name] = area.shape[0]
-        elif area.ndim == 2:
-            counts[area_name] = 1
-    return counts
-
 # Get the current data-slug for the current folder and the data directory
 current_dir = Path.cwd()
 data_slug = current_dir.name
-data_root = current_dir.parents[1] / "data" / data_slug
+data_path = current_dir.parents[1] / "data" / data_slug
 
-# Get neuron counts per area for the calcium excitatory method
-neuron_counts = []
-for file in data_root.glob('calcium_excitatory/*/*.mat'):
-    mat = read_mat(str(file))
-    neuron_counts.append({'modality': 'calcium_excitatory', 'area': file.parent.name,
-                          'n_neurons': mat['raw_pop_vector_info_trials'].shape[0]})
+# Compute the cohort size of neuropixels modality
+manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')
+cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
+# Get the number of unique mice in the Neuropixels data
+neuropixels_session_table = cache.get_session_table()
+# The session_id is in the index id
+neuropixels_session_table = neuropixels_session_table.reset_index()
+# Each session is equivalent to each mouse. 58 total
 
-# Get neuron counts per area for the Neuropixels method
-for file in data_root.glob('neuropixels/*.mat'):
-    mat = read_mat(str(file))
-    for area_name, n in neuropixels_area_counts(mat['informative_rater_mat'][0]).items():
-        neuron_counts.append({'modality': 'neuropixels', 'area': area_name, 'n_neurons': n})
+# Compute the cohort size of calcium_excitatory modality
+manifest_path_cal = os.path.join(os.path.expanduser('~'), 'allen_cache_ophys', 'manifest.json')
+cache_cal = BrainObservatoryCache(manifest_file=manifest_path_cal)
+calcium_session_info = cache_cal.get_experiment_containers()
+calcium_session_table = pd.DataFrame(columns=["id", 'donor_name'], index=range(len(calcium_session_info)))
+for i in range(len(calcium_session_info)):
+    calcium_session_table.loc[i, 'id'] = calcium_session_info[i]['id']
+    calcium_session_table.loc[i, 'donor_name'] = calcium_session_info[i]['donor_name']
+# Get the id of the processed data
+processed_data_id = [int(f.stem) for f in data_path.glob('calcium_excitatory/*/*.mat')] # 336
+# Filter the session table
+filtered_calcium_session_table = calcium_session_table[calcium_session_table['id'].isin(processed_data_id)]
+# 193 mice, with multuple sessions
+```
 
-# Save the result in a pandas DataFrame
-neuron_stats = (pd.DataFrame(neuron_counts)
-                .groupby(['modality', 'area'])['n_neurons']
-                .agg(range=lambda x:f"{x.min()} - {x.max()}")
-                .unstack('area')
-                .droplevel(0, axis = 1)
-                .reindex(columns=brain_areas)
-                .rename_axis("Modality")
-                .rename_axis("Brain Areas", axis=1)
-                .rename({'calcium_excitatory':'Calcium Imaging (Excitatory)', 'neuropixels':'Neuropixels'})
-                .fillna(0))
-neuron_stats
+</details>
+
+| **Modality**                   | **Unique Mice** |
+|--------------------------------|-----------------|
+| *Calcium Imaging (Excitatory)* | 193             |
+| *Neuropixels*                  | 58              |
+
+Calcium (Excitatory) processed files number 336 but they are from 193
+unique mice subjects. Neuropixels processed files number 58 as well,
+implying 1 session per mouse.
+
+### Per-Mouse Neuron Coverage
+
+#### Calcium Im
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Define the area names as per visual_drift analysis
+brain_areas = ['VISp','VISl','VISal','VISpm','VISrl','VISam','LGd','LP']
+
+# How many neurons recorded per mice per session?
+calcium_area_wise = pd.DataFrame(columns=['session_id', 'area', 'n_neurons'], index = range(336))
+idx = 0
+for f in data_path.glob('calcium_excitatory/**/*.mat'):
+    calcium_area_wise.loc[idx, 'session_id'] = int(f.stem)
+    calcium_area_wise.loc[idx, 'area'] = f.parent.name
+    load_file = read_mat(f)
+    calcium_area_wise.loc[idx, 'n_neurons'] = load_file['raw_pop_vector_info_trials'].shape[0]
+    idx+=1
+# Pivot to wide format and add mouse id info
+calcium_area_wise = (
+    calcium_area_wise
+    .merge(filtered_calcium_session_table, how = 'left',
+            left_on = 'session_id', right_on = 'id')
+    .drop(columns = 'id')
+    # Get the minimum number of neurons per area per mice
+    .pivot_table(index = 'donor_name', columns = 'area', values = 'n_neurons', aggfunc='min')
+    .fillna(0)
+    .merge(filtered_calcium_session_table.groupby('donor_name')['id']
+                                            .apply(list).reset_index(),
+            how = 'left', on = 'donor_name')
+)
+# Convvert number of neurons to int type
+calcium_area_wise[brain_areas[:6]] = calcium_area_wise[brain_areas[:6]].astype(int)
+# Order by maximum number of areas covered per mice
+calcium_area_wise = (
+    calcium_area_wise.assign(n_areas=lambda x: (x[brain_areas[:6]] > 0).sum(axis=1))
+    .sort_values('n_areas', ascending=False)
+    .drop(columns='n_areas')
+    .assign(total=lambda x: x[brain_areas[:6]].sum(axis = 1).astype(int))
+    .set_index('donor_name')
+    .rename_axis('Donor ID')
+    .rename(columns = {'total':'Total'})
+)
+# Display the top 5
+calcium_area_wise[brain_areas[:6] + ['Total']].head()
 ```
 
 </details>
@@ -225,10 +286,15 @@ neuron_stats
     }
 </style>
 
-| Brain Areas | VISp | VISl | VISal | VISpm | VISrl | VISam | LGd | LP |
-|----|----|----|----|----|----|----|----|----|
-| Modality |  |  |  |  |  |  |  |  |
-| Calcium Imaging (Excitatory) | 21 - 602 | 11 - 499 | 7 - 492 | 23 - 331 | 11 - 423 | 5 - 297 | 0 | 0 |
-| Neuropixels | 14 - 126 | 14 - 100 | 9 - 185 | 13 - 115 | 10 - 111 | 17 - 135 | 1 - 90 | 2 - 170 |
+|          | VISp | VISl | VISal | VISpm | VISrl | VISam | Total |
+|----------|------|------|-------|-------|-------|-------|-------|
+| Donor ID |      |      |       |       |       |       |       |
+| 323982   | 163  | 90   | 0     | 143   | 0     | 0     | 396   |
+| 309689   | 21   | 11   | 30    | 0     | 0     | 0     | 62    |
+| 348105   | 69   | 120  | 0     | 159   | 0     | 0     | 348   |
+| 268133   | 0    | 0    | 0     | 250   | 326   | 241   | 817   |
+| 340467   | 0    | 0    | 310   | 157   | 0     | 133   | 600   |
 
 </div>
+
+None of the subjects under this modality had all the areas covered.
