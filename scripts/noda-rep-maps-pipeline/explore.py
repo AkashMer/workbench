@@ -7,8 +7,8 @@ import itertools
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial.distance import cdist
-from scipy.stats import rankdata
-from sklearn.decomposition import PCA
+from scipy.spatial import procrustes
+from sklearn.manifold import MDS
 import os
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 from allensdk.core.brain_observatory_cache import BrainObservatoryCache
@@ -218,9 +218,9 @@ print(calcium_area_wise[(calcium_area_wise[brain_areas[:6]] > 0).all(axis=1)].to
 # Picked session 755434585 / mouse 730760270: every area has >= 27 neurons,
 # 432 neurons total
 
-# Check behavioral data for the session_755434585
+# Check behavioral data for the session_756029989
 # 1. Define the path
-data_file_path = data_path / "neuropixels" / "session_755434585.mat"
+data_file_path = data_path / "neuropixels" / "session_756029989.mat"
 
 # 2. Load the file
 data = read_mat(data_file_path)
@@ -260,7 +260,7 @@ n_bins = 30
 # Define the number of trials
 n_trials = 10
 # Initialize a population reponse space variable
-rdms = {}
+rsms = {}
 # Bin the data in each area and compute the RDM
 for idx, area in enumerate(brain_areas):
     # Get the number of neurons
@@ -274,12 +274,10 @@ for idx, area in enumerate(brain_areas):
     # Flatten bins and repeats for cdist function
     binned_data = np.reshape(binned_data, (n_bins * n_trials, n_neurons))
 
-    # Rank each population vector (Spearman = Pearson on ranks)
-    ranked_data = np.apply_along_axis(rankdata, 1, binned_data)
-    # Compute the dissimilarity matrix using Spearman rank correlation
-    dist_matrix = cdist(ranked_data, ranked_data, metric='correlation')
+    # Compute the disimilarity matrix using pearson correlation
+    dist_matrix = cdist(binned_data, binned_data, metric='correlation')
 
-    # Flip to a similarity matrix
+    # Convert to a similarity matrix
     similarity_matrix = 1 - dist_matrix
 
     # Block the diagonal to preserve trial-to-trial reliability measure
@@ -299,39 +297,38 @@ for idx, area in enumerate(brain_areas):
         else:
             res[j, k] = np.mean(block)
 
-    # Enforce symmetry (floating point noise from block averaging)
-    res = (res + res.T) / 2
-
     # Transform back to correlations
     rsm = np.tanh(res)
 
-    # Convert to dissimilarity matrix
-    rdm = 1 - rsm
-
     # Save the result
-    rdms[area] = pd.DataFrame(rdm, index = range(n_bins), columns=range(n_bins))
+    rsms[area] = pd.DataFrame(rsm, index = range(n_bins), columns=range(n_bins))
 
-# Plot RDMs by area
+# Plot RSMs by area
 fig, axes = plt.subplots(2, 4)
 axes = axes.flatten()
 plot_idx = 0
-for item in rdms:
-    sns.heatmap(rdms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True)
+for item in rsms:
+    sns.heatmap(rsms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True)
     axes[plot_idx].set_title(item)
     axes[plot_idx].set_xticks([])
     axes[plot_idx].set_yticks([])
     plot_idx += 1
 
-# Dimension reduction
-pca = PCA(n_components=2)
-fig, axes = plt.subplots(2, 4)
-axes = axes.flatten()
-plot_idx = 0
-for item in rdms:
-    dem_red = pca.fit_transform(rdms[item])
-    axes[plot_idx].scatter(dem_red[:,0], dem_red[:,1])
-    axes[plot_idx].set_title(item)
-    plot_idx += 1
+# Dimension reduction via MDS
+neural_mds = {}
+mds = MDS(n_components=2, dissimilarity='precomputed', random_state=23, n_init=1)
+for area in rsms:
+    rsm_for_mds = rsms[area].values.copy()
+    np.fill_diagonal(rsm_for_mds, 1)
+    neural_mds[area] = mds.fit_transform(1 - rsm_for_mds)
+    mds_df = pd.DataFrame(neural_mds[area], columns=['MDS1', 'MDS2'])
+    fig, ax = plt.subplots()
+    sns.scatterplot(data=mds_df, x='MDS1', y='MDS2', ax=ax)
+    ax.set_title(area)
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
 
 # Validate against the stimulus data
 # Download Natural Movie 1
@@ -341,26 +338,36 @@ print(movie.shape)
 movie_binned = movie.reshape(30, 30, 304, 608).mean(axis=1)  # (30, 304, 608)
 movie_flat = movie_binned.reshape(30, -1).astype(float)       # (30, 184832)
 # Create a Pixel Similarity Matrix (30 x 30)
-pixel_similarity = np.corrcoef(movie_flat)
+pixel_similarity = 1 - cdist(movie_flat, movie_flat, metric='correlation')
 print('Pixel similarity matrix shape:', pixel_similarity.shape)
 # Plot
 plt.figure(figsize=(6,6))
 plt.imshow(pixel_similarity, cmap='RdBu')
 plt.colorbar(label='Pixel correlation')
-# PCA on this pixel similarity matrix to give groups
-stimulus_dem_red = pca.fit_transform(pixel_similarity)
-# Find the 2 clusters
-stimulus_clusters = KMeans(n_clusters = 2).fit_predict(stimulus_dem_red)
 
-# Use the pc1 dimension to provide groups to the reponse PCA
-fig, axes = plt.subplots(2, 4)
+# Apply MDS for visualization
+mds = MDS(n_components=2, dissimilarity='precomputed', random_state=23)
+stimulus_mds = mds.fit_transform(1 - pixel_similarity)
+# 2 distinct areas visible in some RSMs
+stimulus_clusters = KMeans(n_clusters=2, random_state=23).fit_predict(stimulus_mds)
+# Visualize the stimulus structure with those 2 clusters
+fig, ax = plt.subplots()
+scatter = ax.scatter(stimulus_mds[:, 0], stimulus_mds[:, 1], c=stimulus_clusters)
+ax.set_xlabel('MDS1')
+ax.set_ylabel('MDS2')
+ax.set_title('MDS of stimulus structure')
+
+# Neural MDS colored by stimulus clusters — Procrustes-aligned to stimulus MDS
+cluster_palette = sns.color_palette('Dark2', n_colors=2)
+colors = [cluster_palette[c] for c in stimulus_clusters]
+fig, axes = plt.subplots(2, 4, figsize=(16, 8))
 axes = axes.flatten()
-plot_idx = 0
-for item in rdms:
-    dem_red = pca.fit_transform(rdms[item])
-    axes[plot_idx].scatter(dem_red[:,0], dem_red[:,1], c=stimulus_clusters, cmap = 'viridis')
-    axes[plot_idx].set_title(item)
-    plot_idx += 1
+for plot_idx, area in enumerate(neural_mds):
+    _, aligned, _ = procrustes(stimulus_mds, neural_mds[area])
+    axes[plot_idx].scatter(aligned[:, 0], aligned[:, 1], c=colors, s=40)
+    axes[plot_idx].set_title(area)
+    axes[plot_idx].set_xticklabels([])
+    axes[plot_idx].set_yticklabels([])
 
 # What is the pixel similarity capturing?
 fig, axes = plt.subplots(5, 6, figsize=(15, 10))
