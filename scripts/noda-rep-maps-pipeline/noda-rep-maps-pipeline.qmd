@@ -346,6 +346,7 @@ for ax, metric in zip(g.axes.flat, y_labels):
 g.fig.patch.set_alpha(0)
 for ax in g.axes.flat:
     ax.patch.set_alpha(0)
+plt.show();
 ```
 
 The full block-by-block RSM comparison of the two candidate sessions is shown in [Appendix A](#appendix-a).
@@ -572,6 +573,7 @@ for ax, metric in zip(g.axes.flat, y_labels):
 g.fig.patch.set_alpha(0)
 for ax in g.axes.flat:
     ax.patch.set_alpha(0)
+plt.show();
 ```
 
 

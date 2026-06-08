@@ -151,9 +151,11 @@ Figure 1: **Stimulus Structure**
 
 </div>
 
-<video width="100%" controls>
+<div style="display: flex; justify-content: center;">
+<video controls>
   <source src="attachments/natural_movie1.mp4" type="video/mp4">
 </video>
+</div>
 
 Natural Movie 1 was played at 30 fps thus the movie frames were binned
 to nine-frame bins of approximately 300 ms each. One second bins are
@@ -471,6 +473,7 @@ for ax, metric in zip(g.axes.flat, y_labels):
 g.fig.patch.set_alpha(0)
 for ax in g.axes.flat:
     ax.patch.set_alpha(0)
+plt.show();
 ```
 
 </details>
@@ -694,7 +697,9 @@ difference between `k = 2` and `k = 3` was minimal. This prompted me to
 check if the structure was hiding in the higher dimensions. On using 3
 MDS dimensions, the flanking bins actually wrapped around the opposite
 cluster bins thus creating the 2D structure of the representational maps
-shown above.
+shown above. The same wrapping geometry is present in the 3D MDS of the
+stimulus space, which implies that this feature is a property of the
+stimulus structure rather than an artifact.
 
 <details class="code-fold">
 <summary>Code</summary>
@@ -798,6 +803,7 @@ for ax, metric in zip(g.axes.flat, y_labels):
 g.fig.patch.set_alpha(0)
 for ax in g.axes.flat:
     ax.patch.set_alpha(0)
+plt.show();
 ```
 
 </details>
