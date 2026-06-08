@@ -45,6 +45,8 @@ jobs:
 
       # -----------------------------------------------------------------------
       # 3. Copy the built markdown and attachments into Inbox/{slug}/
+      #    Rewrite relative figure paths to absolute paths matching the
+      #    final Workbench/{slug}/ location in the vault
       # -----------------------------------------------------------------------
       - name: Copy post to Inbox
         run: |
@@ -57,6 +59,8 @@ jobs:
           if [ -d "scripts/${SLUG}/${SLUG}_files" ]; then
             cp -r scripts/${SLUG}/${SLUG}_files private-repo/Inbox/${SLUG}/
           fi
+          # Rewrite relative figure paths to absolute paths for Quartz
+          sed -i "s|${SLUG}_files/figure-commonmark/|/Workbench/${SLUG}/${SLUG}_files/figure-commonmark/|g" private-repo/Inbox/${SLUG}/${SLUG}.md
 
       # -----------------------------------------------------------------------
       # 4. Commit and push to the private vault repo
