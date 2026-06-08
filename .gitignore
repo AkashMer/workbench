@@ -6,6 +6,7 @@ data/*
 .jupyter_cache/
 *.quarto_ipynb*
 *_files/
+!scripts/**/*_files/
 /_site/
 /_freeze/
 

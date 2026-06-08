@@ -54,6 +54,9 @@ jobs:
           if [ -d "scripts/${SLUG}/attachments" ]; then
             cp -r scripts/${SLUG}/attachments private-repo/Inbox/${SLUG}/
           fi
+          if [ -d "scripts/${SLUG}/${SLUG}_files" ]; then
+            cp -r scripts/${SLUG}/${SLUG}_files private-repo/Inbox/${SLUG}/
+          fi
 
       # -----------------------------------------------------------------------
       # 4. Commit and push to the private vault repo

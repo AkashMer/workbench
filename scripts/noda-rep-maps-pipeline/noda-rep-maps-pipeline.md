@@ -2,14 +2,14 @@
 
 
 This post implements the representational map estimation pipeline
-visualized in [[@Noda_2024-03-22]].
+visualized in \[\[@Noda_2024-03-22\]\].
 
 ## Stimulus Description
 
 ### Experimental Setup
 
 The raw data came from the Allen Brain Observatory “Visual Coding”
-project[@deVries_2020-01; @Siegle_2021-04a]. Mice were head-fixed in
+project\[@deVries_2020-01; @Siegle_2021-04a\]. Mice were head-fixed in
 front of a monitor and shown various visual stimuli: drifting gratings,
 natural images and natural movies. During this time, neural activity was
 recorded using two-photon calcium imaging and Neuropixels probes in two
@@ -177,7 +177,7 @@ approximately 10-12 seconds.
 
 ### Preprocessed Data Structure
 
-The preprocessed data[@Deitch_2021-10-11] is structured as follows:
+The preprocessed data\[@Deitch_2021-10-11\] is structured as follows:
 
 | **Modality** | **Variable Name** | **Structure** |
 |----|----|----|
@@ -312,10 +312,10 @@ pd.concat([calcium_area_wise[brain_areas[:6] + ['Total']].head(2),
 </div>
 
 None of the subjects under this modality had all the areas covered.
-[@Noda_2024-03-22] advises ideal cohort size for a representational
+\[@Noda_2024-03-22\] advises ideal cohort size for a representational
 map estimation to be 1 if sufficient number of neurons are recorded. One
 of the goals of this analysis is to portray various properties of a
-representational map defined in [@Noda_2024-03-22]. The hierarchical
+representational map defined in \[@Noda_2024-03-22\]. The hierarchical
 nature of representational maps cannot be shown in the case of the above
 calcium imaging data due to lack of coverage of all areas in a single
 subject. Thus, it was excluded from the analysis.
@@ -390,14 +390,14 @@ Session `755434585` / Mouse `730760270` and Session `756029989` / Mouse
 `734865738` were picked for applying the estimation pipeline since both
 had sufficient number of neurons in all areas with total number of
 neurons sitting within the range of 100s to tens of
-thousands[@Noda_2024-03-22].
+thousands\[@Noda_2024-03-22\].
 
 ## Behavioral State
 
 Global brain states affect representational map estimates by suppressing
 elements or shifting their positions. Standardizing experimental
 conditions or measuring brain state explicitly is
-advised[@Noda_2024-03-22]. The passive viewing design already
+advised\[@Noda_2024-03-22\]. The passive viewing design already
 standardizes the experimental context. Several behavioral metrics such
 as pupil size, position, width, movement and running speed are measured
 and reported in the dataset.
@@ -497,12 +497,12 @@ computing Representational Similarity Matrix (RSM) for each area. The
 neuron spike counts were averaged across 9 frames in a bin which
 corresponds to ~300 ms. This time frame is near the upper range of
 neuron responses, thus enabling capture of population level
-dynamics[@Piasini_2021-07-21]. Pearson correlation was chosen since it
+dynamics\[@Piasini_2021-07-21\]. Pearson correlation was chosen since it
 is the standard metric for RSA. A crosswise single-trial correlation
 approach was implemented instead of averaging across trials. This
 allowed the diagonal of the matrix to serve as a trial-to-trial
 reliability measure, thus informing interpretation of representational
-map structure from the heatmap[@Noda_2024-03-22].
+map structure from the heatmap\[@Noda_2024-03-22\].
 
 <details class="code-fold">
 <summary>Code</summary>
@@ -628,7 +628,7 @@ ID - `734865738`). *Brackets show mean trial-by-trial reliability
 The RSM structure shifts from temporal similarity in VISp to broad bin
 groupings in higher visual areas, which is consistent with the
 hierarchical characteristics of representational
-maps[@Noda_2024-03-22].
+maps\[@Noda_2024-03-22\].
 
 ## Visualizing the Representational Map
 
@@ -739,26 +739,26 @@ RDM and the pixel RDM
 </div>
 
 Above comparison was done using **Python Representational Similarity
-Analysis toolbox** (rsatoolbox)[@Bosch_2025-05-27].
+Analysis toolbox** (rsatoolbox)\[@Bosch_2025-05-27\].
 <a href="#fig-validation" class="quarto-xref">Figure 5</a> shows
 response spaces of higher visual areas correlate better with the
 stimulus pixel space. Following should be noted:
 
 - *VISp* is the least correlated which aligns with its role as a visual
-  cue detector[@Harris_2019-11].
+  cue detector\[@Harris_2019-11\].
 - *VISpm* and *VISam* are most correlated among the higher visual areas
   which aligns with their role as higher order areas along the dorsal
   stream which specializes in tracking global motion and spatial
-  features[@Harris_2019-11; @Siegle_2021-04a].
+  features\[@Harris_2019-11; @Siegle_2021-04a\].
 - *VISl*, *VISal* and *VISrl* sit between the above 2 extremes which
   aligns with their role as intermediates between primary visual area
   and higher order visual areas along the ventral and dorsal streams
   (VISal and VISrl) respectively. The ventral stream specializes in fine
   spatial details such as shape, texture and object
-  recognition[@Harris_2019-11; @Siegle_2021-04a].
+  recognition\[@Harris_2019-11; @Siegle_2021-04a\].
 - *LGd*, a feedforward relay center and *LP*, a higher order routing
   center show inverted pattern relative to their expected
-  roles[@Harris_2019-11; @Siegle_2021-04a]. LGd’s low mean
+  roles\[@Harris_2019-11; @Siegle_2021-04a\]. LGd’s low mean
   trial-to-trial reliability despite high RDM correlation between the
   response and stimulus space is puzzling. LP’s low neuron count (`27`)
   also limits confidence in its estimate. Further investigation of other
