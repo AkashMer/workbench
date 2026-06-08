@@ -357,7 +357,7 @@ for plot_idx, area in enumerate(neural_mds):
 
 # What is the pixel similarity capturing?
 # Check out the movie clip
-imageio.mimwrite('scripts/noda-rep-maps-pipeline/natural_movie1.mp4', movie, format='ffmpeg', fps=30)
+imageio.mimwrite('scripts/noda-rep-maps-pipeline/attachments/natural_movie1.mp4', movie, format='ffmpeg', fps=30)
 # Alley with couple till 4-5 seconds
 # Wall with the 3rd individual's shadow on it from 6-10 seconds
 # Car completely in view at around 12 seconds

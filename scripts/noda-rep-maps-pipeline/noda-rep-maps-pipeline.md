@@ -1,20 +1,24 @@
-# undecided
-Dr. Akash Mer
-2026-06-08
+# Estimation of Representational Maps in Mouse Visual Areas (Noda et al., 2024)
+
+
+This post implements the representational map estimation pipeline
+visualized in \[\[@Noda_2024-03-22\]\].
 
 ## Stimulus Description
 
 ### Experimental Setup
 
 The raw data came from the Allen Brain Observatory “Visual Coding”
-project. Mice were head-fixed in front of a monitor and shown various
-visual stimuli: drifting gratings, natural images and natural movies.
-During this time, neural activity was recorded using two-photon calcium
-imaging and Neuropixels probes in two different cohorts of mice. The
-following analysis is limited to sessions when the stimulus was Natural
-Movie 1. The stimulus is presented repeatedly. The Neuropixels recording
-sessions include two movie types: - Natural Movie 1 - Natural Movie 1
-shuffled
+project\[@deVries_2020-01; @Siegle_2021-04a\]. Mice were head-fixed in
+front of a monitor and shown various visual stimuli: drifting gratings,
+natural images and natural movies. During this time, neural activity was
+recorded using two-photon calcium imaging and Neuropixels probes in two
+different cohorts of mice. The following analysis is limited to sessions
+when the stimulus was Natural Movie 1. The stimulus is presented
+repeatedly. The Neuropixels recording sessions include two movie types:
+
+- Natural Movie 1
+- Natural Movie 1 shuffled
 
 **Ethological significance of Natural Movie 1**: Natural movie 1 is a
 ~30 second black-and-white movie clip from the film *Touch of Evil*.
@@ -41,10 +45,7 @@ These areas match the visual perception circuitry in mice.
 similar conditions of passive viewing and the same recording paradigm
 which reduces the effect of global brain states. Both datasets also
 include behavioral state measures: pupil metrics (movement, position,
-size, and width) and running speed. <!--
-I plan to compare the pupil size and movement and running speed to mean cross-trial reliability of the population response to gauge how reliably each block/session represents the stimulus. 
-The mean cross-trial reliability will be computed from cross-trial correlations instead of averaging across trials. Session weights for the final representational map will be informed by both the number of neurons recorded in each area and each session's cross-trial reliability(if confirmed by behavioral co-variance).
--->
+size, and width) and running speed.
 
 <details class="code-fold">
 <summary>Imports</summary>
@@ -59,16 +60,18 @@ import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import imageio
 from pymatreader import read_mat
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 from allensdk.core.brain_observatory_cache import BrainObservatoryCache
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.spatial.distance import cdist
+from scipy.spatial import procrustes
 import itertools
 from sklearn.manifold import MDS
 from sklearn.cluster import KMeans
-import imageio
+import rsatoolbox
 ```
 
 </details>
@@ -81,7 +84,10 @@ import imageio
 manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')
 cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
 movie = cache.get_natural_movie_template(1)
-imageio.mimwrite('natural_movie1.mp4', movie, format='ffmpeg', fps=30)
+# Save the movie in an attachments folder if not already there
+Path('attachments').mkdir(exist_ok=True)
+if not Path('attachments/natural_movie1.mp4').exists():
+    imageio.mimwrite('attachments/natural_movie1.mp4', movie, format='ffmpeg', fps=30)
 
 # Bin movie frames into 100 nine-frame bins (~300 ms)
 movie_binned = movie.reshape(100, 9, 304, 608).mean(axis=1)
@@ -105,7 +111,7 @@ title_fontsize = 18
 label_fontsize = 12
 
 # Plot pixel similarity matrix and MDS scatter
-fig, (ax_heatmap, ax_scatter) = plt.subplots(1, 2, figsize=(12, 5))
+fig, (ax_heatmap, ax_scatter) = plt.subplots(1, 2, figsize=(8, 3.5))
 fig.subplots_adjust(wspace=0.35)
 
 # Pixel similarity matrix
@@ -128,6 +134,10 @@ ax_scatter.set_ylabel('MDS2', fontsize=label_fontsize)
 ax_scatter.set_xticklabels([])
 ax_scatter.set_yticklabels([])
 ax_scatter.set_title('MDS of stimulus structure', fontsize=title_fontsize, pad=8)
+# Allows consistency across dark/light mode
+fig.patch.set_alpha(0)
+for ax in fig.get_axes():
+    ax.patch.set_alpha(0)
 plt.show();
 ```
 
@@ -137,11 +147,13 @@ plt.show();
 
 ![](noda-rep-maps-pipeline_files/figure-commonmark/fig-stimulus-structure-output-1.png)
 
-Figure 1: Stimulus Structure
+Figure 1: **Stimulus Structure**
 
 </div>
 
-![](natural_movie1.mp4)
+<video width="100%" controls>
+  <source src="attachments/natural_movie1.mp4" type="video/mp4">
+</video>
 
 Natural Movie 1 was played at 30 fps thus the movie frames were binned
 to nine-frame bins of approximately 300 ms each. One second bins are
@@ -162,6 +174,8 @@ approximately 10-12 seconds.
 ## Data Structure
 
 ### Preprocessed Data Structure
+
+The preprocessed data\[@Deitch_2021-10-11\] is structured as follows:
 
 | **Modality** | **Variable Name** | **Structure** |
 |----|----|----|
@@ -453,6 +467,10 @@ for ax, metric in zip(g.axes.flat, y_labels):
     for block, color in block_colors.items():
         mean_val = behavioral_metrics.query('metric == @metric and block == @block')['value'].mean()
         ax.axhline(mean_val, color=color, alpha=0.5, linestyle='--', linewidth=1.5)
+# Allows consistency across dark/light mode
+g.fig.patch.set_alpha(0)
+for ax in g.axes.flat:
+    ax.patch.set_alpha(0)
 ```
 
 </details>
@@ -461,8 +479,8 @@ for ax, metric in zip(g.axes.flat, y_labels):
 
 ![](noda-rep-maps-pipeline_files/figure-commonmark/fig-behavioral_state-output-1.png)
 
-Figure 2: Behavioral State Comparison of 2 Blocks in Session 756029989
-(Mouse ID - 734865738)
+Figure 2: **Behavioral State Comparison** of 2 Blocks in Session
+`756029989` (Mouse ID - `734865738`)
 
 </div>
 
@@ -471,16 +489,17 @@ shown in [Appendix A](#appendix-a).
 
 ## High-Dimensional Population Response Space
 
-The high-dimensional population response space can be interpretated by
-computing Representational Similarity Matrix(RSM) for each area. The
+The high-dimensional population response space can be interpreted by
+computing Representational Similarity Matrix (RSM) for each area. The
 neuron spike counts were averaged across 9 frames in a bin which
 corresponds to ~300 ms. This time frame is near the upper range of
-neuron responses, thus enabling capture of population level dynamics.
-Pearson correlation was chosen since it is the standard metric for RSA.
-A crosswise single-trial correlation approach was implemented instead of
-averaging across trials. This allowed the diagonal of the matrix to
-serve as a trial-to-trial reliability measure, thus informing
-interpretation of representational map structure from the heatmap.
+neuron responses, thus enabling capture of population level
+dynamics\[@Piasini_2021-07-21\]. Pearson correlation was chosen since it
+is the standard metric for RSA. A crosswise single-trial correlation
+approach was implemented instead of averaging across trials. This
+allowed the diagonal of the matrix to serve as a trial-to-trial
+reliability measure, thus informing interpretation of representational
+map structure from the heatmap\[@Noda_2024-03-22\].
 
 <details class="code-fold">
 <summary>Code</summary>
@@ -555,6 +574,11 @@ cbar_ax = fig.add_axes([0.90, 0.30, 0.012, 0.40])
 sm = plt.cm.ScalarMappable(cmap='RdBu', norm=plt.Normalize(vmin=-1, vmax=1))
 cbar = fig.colorbar(sm, cax=cbar_ax)
 cbar.set_label('Pearson r', labelpad=5, fontsize=15)
+# Allows consistency across dark/light mode
+fig.patch.set_alpha(0)
+for ax in fig.get_axes():
+    ax.patch.set_alpha(0)
+plt.show();
 ```
 
 </details>
@@ -563,41 +587,280 @@ cbar.set_label('Pearson r', labelpad=5, fontsize=15)
 
 ![](noda-rep-maps-pipeline_files/figure-commonmark/fig-population-reponse-space-output-1.png)
 
-Figure 3: Area-wise RSM for Block 1 of Session 756029989 (Mouse ID -
-734865738). Brackets show mean trial-by-trial reliability (Pearson r)
+Figure 3: **Area-wise RSM** for Block 1 of Session `756029989` (Mouse
+ID - `734865738`). *Brackets show mean trial-by-trial reliability
+(Pearson r)*
 
 </div>
 
 ### RSM Patterns
 
-- **VISp**(*High trial-to-trial reliability*):
+- **VISp** *(High trial-to-trial reliability)*:
   - Similarity between off-diagonal bins is not grouped into 2 distinct
     structures but shows small blocks containing adjacent bins. This
     suggests the area is capturing adjacent bin similarities which
     usually have similar visual cue features.
-- **VISl and VISal**(*Highest reliability*):
+- **VISl and VISal** *(Highest reliability)*:
   - Structure is grouped into 2 distinct areas almost coinciding with
     the stimulus clusters.
   - The striped pattern within the group in certain bins suggests
     selectivity for visual features that recur across the movie.
-- **VISpm and VISam**(*High reliability*):
+- **VISpm and VISam** *(High reliability)*:
   - Structure is grouped again into 2 distinct areas. The lower left
     group is further divided into 2 groups with a small difference in
-    correlation
+    correlation.
   - The striped pattern is less frequent but when present shows higher
     correlations.
-- (*High reliability*):
-  - Structure is grouped into 3 distinct areas with boundaries at 5th
-    and 10th bins. This matches the bin when the motion blur appears and
-    disappears in the movie.
-  - The striped pattern within the groups is present but does not extend
-    outside the group unlike VISl and VISal.
-- *VISrl and LGd*: Reliability measure is the lowest in both.
+  - VISpm has fewer striped patterns when compared with VISam.
+- **VISrl and LGd** *(Lowest reliability)*:
   - The off-diagonal structure is present but no strong grouping is
     visible.
-- *LP*: Absence of diagonal contrast makes commenting on reliability
-  difficult.
+  - VISrl’s low unit count (`24`) should also be taken into account
+    during interpretation.
+- **LP** *(High reliability)*:
   - Off-diagonal similarity bins are equally similar throughout.
+  - One stripe is visible in the region of bins 30-40 which coincides
+    with stimulus cluster boundary.
 
-The findings above suggest the presence of hierarchical representational
-maps which evolve along the neuronal circuit.
+The RSM structure shifts from temporal similarity in VISp to broad bin
+groupings in higher visual areas, which is consistent with the
+hierarchical characteristics of representational
+maps\[@Noda_2024-03-22\].
+
+## Visualizing the Representational Map
+
+Multidimensional Scaling (MDS) was applied to each area’s
+Representational Dissimilarity Matrix (RDM) in order to visualize the
+relationship structure. Each point represents one bin, and the distances
+between points reflect the dissimilarity of the population responses.
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Apply MDS to each area's RDM
+mds = MDS(n_components=2, dissimilarity='precomputed', random_state=mds_random_state, n_init=1)
+neural_mds = {}
+for area in brain_areas:
+    rdm = 1 - rsms[area].values.copy()
+    np.fill_diagonal(rdm, 0)
+    neural_mds[area] = mds.fit_transform(rdm)
+
+# Plot neural MDS colored by stimulus clusters
+fig, axes = plt.subplots(2, 4, figsize=(16, 8))
+axes = axes.flatten()
+for plot_idx, area in enumerate(brain_areas):
+    # Use procrustes to align them with the stimulus visualization
+    aligned = procrustes(stimulus_mds, neural_mds[area])[1]
+    for c_idx in range(2):
+        mask = stimulus_clusters == c_idx
+        axes[plot_idx].scatter(aligned[mask, 0], aligned[mask, 1],
+                               color=cluster_palette[c_idx], s=40)
+    axes[plot_idx].set_title(area, fontsize=20)
+    axes[plot_idx].set_xticks([])
+    axes[plot_idx].set_yticks([])
+# Allows consistency across dark/light mode
+fig.patch.set_alpha(0)
+for ax in axes.flat:
+    ax.patch.set_alpha(0)
+plt.show();
+```
+
+</details>
+
+<div id="fig-representational-map">
+
+![](noda-rep-maps-pipeline_files/figure-commonmark/fig-representational-map-output-1.png)
+
+Figure 4: **Area-wise MDS Representational Maps** (Block 1, Session
+`756029989`). *Points are colored based on stimulus clusters and each
+map is Procrustes-aligned to the stimulus MDS for comparison.*
+
+</div>
+
+## Validation of the Representational Map
+
+<a href="#fig-representational-map" class="quarto-xref">Figure 4</a>
+shows diffuse clusters for primary visual area (*VISp*) and thalamic
+area *LP*. *VISl* shows a collapsed representational structure as
+compared to other areas. But higher visual areas: *VISal*, *VISpm* and
+*VISam* show a distinct structure where one cluster bins are flanked by
+the bins from the other cluster on both sides. On the other hand *VISrl*
+and *LGd* show a unique structure where cluster 1 bins are interspersed
+within the structure of the other cluster. On my first inspection of
+these structures, I hypothesized that the movie cannot be represented by
+only 2 clusters. This was proven wrong when the `Silhouette score`
+difference between `k = 2` and `k = 3` was minimal. This prompted me to
+check if the structure was hiding in the higher dimensions. On using 3
+MDS dimensions, the flanking bins actually wrapped around the opposite
+cluster bins thus creating the 2D structure of the representational maps
+shown above.
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+triu_idx = np.triu_indices(n_bins, k=1)
+pixel_rdm = rsatoolbox.rdm.RDMs((1 - pixel_similarity)[triu_idx].reshape(1, -1))
+rsa_r = {}
+for area in brain_areas:
+    rsm_vals = np.nan_to_num(rsms[area].values, nan=0.0)
+    neural_rdm = rsatoolbox.rdm.RDMs((1 - rsm_vals)[triu_idx].reshape(1, -1))
+    rsa_r[area] = float(rsatoolbox.rdm.compare(neural_rdm, pixel_rdm, method='spearman')[0, 0])
+
+rsa_df = pd.DataFrame({'Area': brain_areas, 'Spearman r': [rsa_r[a] for a in brain_areas]})
+fig, ax = plt.subplots(figsize=(10, 5))
+sns.barplot(data=rsa_df, x='Area', y='Spearman r', hue='Area', palette='colorblind', legend=False, ax=ax)
+ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
+ax.set_xlabel('')
+for i, area in enumerate(brain_areas):
+    ax.text(i, rsa_r[area] + 0.005, f'{rsa_r[area]:.3f}', ha='center', va='bottom', fontsize=9)
+plt.tight_layout()
+# Allows consistency across dark/light mode
+fig.patch.set_alpha(0)
+ax.patch.set_alpha(0)
+plt.show();
+```
+
+</details>
+
+<div id="fig-validation">
+
+![](noda-rep-maps-pipeline_files/figure-commonmark/fig-validation-output-1.png)
+
+Figure 5: **RSA Validation**: Spearman *r* between each area’s neural
+RDM and the pixel RDM
+
+</div>
+
+Above comparison was done using **Python Representational Similarity
+Analysis toolbox** (rsatoolbox)\[@Bosch_2025-05-27\].
+<a href="#fig-validation" class="quarto-xref">Figure 5</a> shows
+response spaces of higher visual areas correlate better with the
+stimulus pixel space. Following should be noted:
+
+- *VISp* is the least correlated which aligns with its role as a visual
+  cue detector\[@Harris_2019-11\].
+- *VISpm* and *VISam* are most correlated among the higher visual areas
+  which aligns with their role as higher order areas along the dorsal
+  stream which specializes in tracking global motion and spatial
+  features\[@Harris_2019-11; @Siegle_2021-04a\].
+- *VISl*, *VISal* and *VISrl* sit between the above 2 extremes which
+  aligns with their role as intermediates between primary visual area
+  and higher order visual areas along the ventral and dorsal streams
+  (VISal and VISrl) respectively. The ventral stream specializes in fine
+  spatial details such as shape, texture and object
+  recognition\[@Harris_2019-11; @Siegle_2021-04a\].
+- *LGd*, a feedforward relay center and *LP*, a higher order routing
+  center show inverted pattern relative to their expected
+  roles\[@Harris_2019-11; @Siegle_2021-04a\]. LGd’s low mean
+  trial-to-trial reliability despite high RDM correlation between the
+  response and stimulus space is puzzling. LP’s low neuron count (`27`)
+  also limits confidence in its estimate. Further investigation of other
+  sessions is needed to confirm this pattern.
+
+<details id="appendix-a">
+<summary><strong>Appendix A</strong></summary>
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Load the other mouse file
+data_755 = read_mat(data_path / "neuropixels" / "session_755434585.mat")
+# Get the behavioral metrics
+mean_pupil_size_755 = data_755['mean_pupil_size_repeats'][0]
+mean_running_speed_755 = data_755['mean_running_speed_repeats'][0]
+# Combine them togther in one dataframe for plotting
+behavioral_metrics_755 = (pd.concat([
+        pd.DataFrame(mean_pupil_size_755, columns=['Block 1', 'Block 2']).assign(metric='Mean Pupil Size'),
+        pd.DataFrame(mean_running_speed_755, columns=['Block 1', 'Block 2']).assign(metric='Mean Running Speed')
+    ])
+    .reset_index(names='repeat')
+    .melt(id_vars=['repeat', 'metric'], value_vars=['Block 1', 'Block 2'],
+          var_name='block', value_name='value')
+)
+# Plot a similar behavioral comparison chart as for the selected mouse
+g = sns.FacetGrid(behavioral_metrics_755, row='metric', sharey=False, height=3, aspect=2.5)
+g.map_dataframe(sns.lineplot, x='repeat', y='value', hue='block', marker='o')
+g.add_legend()
+g.set_axis_labels(x_var='Repeat', y_var='')
+g.set_titles(row_template='{row_name}')
+y_labels = {'Mean Pupil Size': 'a.u.', 'Mean Running Speed': 'cm/s'}
+for ax, metric in zip(g.axes.flat, y_labels):
+    ax.set_ylabel(y_labels[metric])
+block_colors = {line.get_label(): line.get_color() for line in g.axes.flat[0].get_lines()}
+for ax, metric in zip(g.axes.flat, y_labels):
+    for block, color in block_colors.items():
+        mean_val = behavioral_metrics_755.query('metric == @metric and block == @block')['value'].mean()
+        ax.axhline(mean_val, color=color, alpha=0.5, linestyle='--', linewidth=1.5)
+# Allows consistency across dark/light mode
+g.fig.patch.set_alpha(0)
+for ax in g.axes.flat:
+    ax.patch.set_alpha(0)
+```
+
+</details>
+
+<div id="fig-appendix-behavioral">
+
+![](noda-rep-maps-pipeline_files/figure-commonmark/fig-appendix-behavioral-output-1.png)
+
+Figure 6: **Behavioral State Comparison** of 2 Blocks in Session
+`755434585` (Mouse ID - `730760270`)
+
+</div>
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Combine both sessions into one for RSM compute loop
+sessions = {
+    '755434585 Block 1': (data_755, 0),
+    '755434585 Block 2': (data_755, 1),
+    '756029989 Block 1': (data, 0),
+    '756029989 Block 2': (data, 1),
+}
+
+# Prepare the axis for plotting
+fig, axes = plt.subplots(4, 8, figsize=(24, 12))
+fig.subplots_adjust(hspace=0.4, wspace=0.15)
+# Compute RSM per block per area and plot
+for row_idx, (label, (sess_data, block_idx)) in enumerate(sessions.items()):
+    neural_data = [area[:, :, block_idx] for area in sess_data['informative_rater_mat'][0][:8]]
+    for col_idx, area in enumerate(brain_areas):
+        rsm = compute_rsm(neural_data[col_idx], n_bins, n_trials, frames_per_bin)
+        mean_rel = np.nanmean(np.diag(rsm))
+        sns.heatmap(rsm, ax=axes[row_idx, col_idx], cmap='RdBu', cbar=False,
+                    square=True, vmin=-1, vmax=1)
+        axes[row_idx, col_idx].set_title(f'{area} (r={mean_rel:.2f})', fontsize=9)
+        axes[row_idx, col_idx].set_xticks([])
+        axes[row_idx, col_idx].set_yticks([])
+        # Provide an indicator around the mouse and block which were selected
+        if row_idx == 2:
+            for spine in axes[row_idx, col_idx].spines.values():
+                spine.set_edgecolor('green')
+                spine.set_linewidth(2.5)
+    axes[row_idx, 0].set_ylabel(label, fontsize=10, labelpad=6)
+
+# Allows consistency across dark/light mode
+fig.patch.set_alpha(0)
+for ax in axes.flat:
+    ax.patch.set_alpha(0)
+plt.show();
+```
+
+</details>
+
+<div id="fig-appendix-rsm">
+
+![](noda-rep-maps-pipeline_files/figure-commonmark/fig-appendix-rsm-output-1.png)
+
+Figure 7: **Block-wise RSM Comparison** for candidate sessions
+`755434585` and `756029989` (Selected block 1 shown explicitly in
+green).
+
+</div>
+
+</details>

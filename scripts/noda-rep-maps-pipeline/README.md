@@ -1,10 +1,9 @@
-# Name of the Post - Undecided
+# Estimation of Representational Maps in Mouse Visual Areas (Noda et al., 2024)
 
 ## Data Source
 
 - Following folders under the data folder of [Repository containing scripts and processed data for Deitch et al., (2021)](https://github.com/zivlab/visual_drift.git) repo were used:
     - calcium_excitatory
-    - calcium_inhibitory
     - neuropixels
 - The data are a processed version of the publicly available neuronal data published in de Vries et al., 2020 and Siegle et al., 2021.
 
@@ -20,7 +19,6 @@
 2. Recreate the environment using `mamba env create -f environment.yml` from this folder.
 3. Download the following folders from the repo https://github.com/zivlab/visual_drift.git,
     - data/calcium_excitatory
-    - data/calcium_inhibitory
     - data/neuropixels
 4. Paste those folders under `data/noda-rep-maps-pipeline` in this repo.
 5. Run `noda-rep-maps-pipeline.qmd` to recreate the post.
