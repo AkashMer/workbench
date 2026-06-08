@@ -11,6 +11,7 @@ execute:
 ## Stimulus Description
 ### Experimental Setup
 The raw data came from the Allen Brain Observatory "Visual Coding" project. Mice were head-fixed in front of a monitor and shown various visual stimuli: drifting gratings, natural images and natural movies. During this time, neural activity was recorded using two-photon calcium imaging and Neuropixels probes in two different cohorts of mice. The following analysis is limited to sessions when the stimulus was Natural Movie 1. The stimulus is presented repeatedly. The Neuropixels recording sessions include two movie types:
+
 - Natural Movie 1
 - Natural Movie 1 shuffled
 
@@ -60,6 +61,7 @@ from scipy.spatial.distance import cdist
 import itertools
 from sklearn.manifold import MDS
 from sklearn.cluster import KMeans
+import imageio
 ```
 
 ```{python}
@@ -71,39 +73,43 @@ from sklearn.cluster import KMeans
 manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')
 cache = EcephysProjectCache.from_warehouse(manifest=manifest_path)
 movie = cache.get_natural_movie_template(1)
+imageio.mimwrite('natural_movie1.mp4', movie, format='ffmpeg', fps=30)
 
-# Bin movie frames into 30 one-second bins
-movie_binned = movie.reshape(30, 30, 304, 608).mean(axis=1)  # (30, 304, 608)
-movie_flat = movie_binned.reshape(30, -1).astype(float)       # (30, 184832)
+# Bin movie frames into 100 nine-frame bins (~300 ms)
+movie_binned = movie.reshape(100, 9, 304, 608).mean(axis=1)
+movie_flat = movie_binned.reshape(100, -1).astype(float)
 
-# Create a Pixel Similarity Matrix (30 x 30)
+# Create a Pixel Similarity Matrix (100 x 100)
 pixel_similarity = 1 - cdist(movie_flat, movie_flat, metric='correlation')
 
 # MDS on the pixel dissimilarity matrix to visualize
-mds_random_state = 45
+mds_random_state = 13
 mds = MDS(n_components=2, dissimilarity='precomputed', random_state=mds_random_state, n_init = 1)
 stimulus_mds = mds.fit_transform(1 - pixel_similarity)
 
 # Check how the movie gets separated for 2 clusters
 stimulus_clusters = KMeans(n_clusters=2, random_state=32).fit_predict(stimulus_mds)
 # Define color for 2 clusters
-cluster_palette = sns.color_palette('Dark2', n_colors=2)
+cluster_palette = [sns.color_palette('colorblind')[0], sns.color_palette('colorblind')[3]]
 
 # Shared Styling
 title_fontsize = 18
 label_fontsize = 12
-frame_aspect = movie_binned.shape[1] / movie_binned.shape[2]
 
-# Plot with matrix and mds scatter in 1st column and binned movie frames in 2nd
-fig = plt.figure(figsize=(16, 9))
-subfigs = fig.subfigures(1, 2, width_ratios=[0.3, 1], wspace=0.02)
-left_axes = subfigs[0].subplots(2, 1)
-ax_heatmap, ax_scatter = left_axes
+# Plot pixel similarity matrix and MDS scatter
+fig, (ax_heatmap, ax_scatter) = plt.subplots(1, 2, figsize=(12, 5))
+fig.subplots_adjust(wspace=0.35)
 
 # Pixel similarity matrix
 sns.heatmap(pixel_similarity, cmap='RdBu', square=True, xticklabels=False, yticklabels=False,
             cbar=False, vmin=-1, vmax=1, ax=ax_heatmap)
 ax_heatmap.set_title('Pixel similarity matrix', fontsize=title_fontsize, pad=8)
+
+# Colorbar
+cbar_ax = fig.add_axes([0.47, 0.15, 0.008, 0.70])
+cbar = fig.colorbar(ax_heatmap.collections[0], cax=cbar_ax, ticks=[-1, 0, 1])
+cbar.ax.set_yticklabels(['-1', '0', '1'])
+cbar.set_label('Pearson r', labelpad=-2, fontsize=12)
 
 # Stimulus structure
 sns.scatterplot(x=stimulus_mds[:, 0], y=stimulus_mds[:, 1],
@@ -114,28 +120,12 @@ ax_scatter.set_ylabel('MDS2', fontsize=label_fontsize)
 ax_scatter.set_xticklabels([])
 ax_scatter.set_yticklabels([])
 ax_scatter.set_title('MDS of stimulus structure', fontsize=title_fontsize, pad=8)
-
-# What is the pixel similarity capturing?
-axes_frames = subfigs[1].subplots(5, 6, gridspec_kw={'left': 0.05, 'right': 0.98,
-                                                     'wspace': 0.05, 'hspace': 0.02})
-for i, ax in enumerate(axes_frames.flat):
-    ax.imshow(movie_binned[i], cmap='gray')
-    ax.set_box_aspect(frame_aspect)
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_edgecolor(cluster_palette[stimulus_clusters[i]])
-        spine.set_linewidth(2)
-subfigs[1].suptitle('Binned movie frames by cluster', fontsize=title_fontsize, y=0.90);
-
-# Add the color legend in the space between 2 columns
-cbar_ax = fig.add_axes([0.22, 0.56, 0.008, 0.28])
-cbar = fig.colorbar(ax_heatmap.collections[0], cax=cbar_ax, ticks=[-1, 0, 1])
-cbar.ax.set_yticklabels(['-1', '0', '1'])
-cbar.set_label('Pearson r', labelpad=-2, fontsize=12)
+plt.show();
 ```
 
-Natural Movie 1 was played at 30 fps thus the movie frames were binned to one-second bins with 30 frames per bin. Binwise pixel correlation was computed and showed 2 distinct regions around bins 9-12. This prompted me to apply KMeans clustering(k=2) to the MDS of the correlation matrix to visualize the structure.  I guessed two clusters before seeing the movie clip based on binwise pixel correlation heatmap. The movie clustered into two structurally distinct halves which can be used for validation of the neural representational map. The frame-by-frame check of the bins gave the context for the 2 clusters. A car becomes clearly visible around bins 9-12 preceded by a motion blur implying a clear scene change.  
+{{< video natural_movie1.mp4 >}}
+
+Natural Movie 1 was played at 30 fps thus the movie frames were binned to nine-frame bins of approximately 300 ms each. One second bins are used for calcium imaging data due to slow decay of the fluorescent indicator. Neural responses shift at the order of tens to hundreds of milliseconds which can be captured by Neuropixels probe. Thus similar binning will fail to capture population level dynamics in the neuropixels data. Binwise pixel correlation was computed and showed 2 distinct regions in the similarity matrix. This prompted me to apply KMeans clustering(k=2) to the MDS of the correlation matrix to visualize the structure. I guessed two clusters before seeing the movie clip based on the binwise pixel correlation heatmap. The movie clustered into two structurally distinct halves which can be used for validation of the neural representational map. Watching the movie directly gave the context for the 2 clusters. A car dominates the frames from approximately 10-12 seconds.
 
 ## Data Structure
 
@@ -333,25 +323,31 @@ g.set_titles(row_template='{row_name}')
 y_labels = {'Mean Pupil Size': 'a.u.', 'Mean Running Speed': 'cm/s'}
 for ax, metric in zip(g.axes.flat, y_labels):
     ax.set_ylabel(y_labels[metric])
+# Add mean lines per block in matching color
+block_colors = {line.get_label(): line.get_color() for line in g.axes.flat[0].get_lines()}
+for ax, metric in zip(g.axes.flat, y_labels):
+    for block, color in block_colors.items():
+        mean_val = behavioral_metrics.query('metric == @metric and block == @block')['value'].mean()
+        ax.axhline(mean_val, color=color, alpha=0.5, linestyle='--', linewidth=1.5)
 ```
 
 The full block-by-block RSM comparison of the two candidate sessions is shown in [Appendix A](#appendix-a).
 
 ## High-Dimensional Population Response Space
 
-The high-dimensional population response space can be interpretated by computing Representational Similarity Matrix(RSM) for each area. The neuron spike counts were averaged across frames in a bin since the movie was played at 30 fps. Pearson correlation was chosen since it is the standard metric for RSA. A crosswise single-trial correlation approach was implemented instead of averaging across trials. This allowed the diagonal of the matrix to serve as a trial-to-trial reliability measure, thus informing interpretation of representational map structure from the heatmap.
+The high-dimensional population response space can be interpretated by computing Representational Similarity Matrix(RSM) for each area. The neuron spike counts were averaged across 9 frames in a bin which corresponds to ~300 ms. This time frame is near the upper range of neuron responses, thus enabling capture of population level dynamics. Pearson correlation was chosen since it is the standard metric for RSA. A crosswise single-trial correlation approach was implemented instead of averaging across trials. This allowed the diagonal of the matrix to serve as a trial-to-trial reliability measure, thus informing interpretation of representational map structure from the heatmap.
 
 ```{python}
 #| code-fold: true
 #| label: fig-population-reponse-space
-#| fig-cap: RSMs for Block 1 of Session 756029989 (Mouse ID - 734865738)
+#| fig-cap: Area-wise RSM for Block 1 of Session 756029989 (Mouse ID - 734865738). Brackets show mean trial-by-trial reliability (Pearson r)
 
 # Define a function to compute rsm preserving the trial to trial reliability
-def compute_rsm(area_data, bins, trials):
+def compute_rsm(area_data, bins, trials, frames_per_bin):
     # Get the number of neurons
     n_neurons = area_data.shape[0]
-    # Reshape into 10 repeats x 30 bins x 30 frames
-    reshaped_data = np.reshape(area_data, (n_neurons, trials, bins, bins))
+    # Reshape into 10 repeats x 100 bins x 9 frames
+    reshaped_data = np.reshape(area_data, (n_neurons, trials, bins, frames_per_bin))
     # Average out the frame
     binned_data = np.mean(reshaped_data, axis = 3)
     # Transpose to change the structure to bins x repeats x neurons
@@ -388,47 +384,51 @@ def compute_rsm(area_data, bins, trials):
 # Get the neural activity data for block 1
 neuropixels_data = [area[:, :, 0] for area in data['informative_rater_mat'][0][:8]]
 # Define the number of bins
-n_bins = 30
+n_bins = 100
+frames_per_bin = 9
 # Define the number of trials
 n_trials = 10
 # Initialize a population reponse space variable
 rsms = {}
 # Compute RSMs for each area
 for idx, area in enumerate(brain_areas):
-    rsms[area] = pd.DataFrame(compute_rsm(neuropixels_data[idx], n_bins, n_trials), index=range(n_bins), columns=range(n_bins))
+    rsms[area] = pd.DataFrame(compute_rsm(neuropixels_data[idx], n_bins, n_trials, frames_per_bin), index=range(n_bins), columns=range(n_bins))
 
 # Plot the RSMs per area
 fig, axes = plt.subplots(2, 4, figsize=(16, 9))
-fig.subplots_adjust(right=0.88)
+fig.subplots_adjust(right=0.88, hspace=0.3, wspace=0.15)
 axes = axes.flatten()
 for plot_idx, item in enumerate(rsms):
     sns.heatmap(rsms[item], ax=axes[plot_idx], cmap='RdBu', cbar=False,
-                square=True, center=0)
-    axes[plot_idx].set_title(item, fontsize=20)
+                square=True, vmin = -1, vmax = 1)
+    # Add the trial-to-trial variability measure
+    mean_rel = np.nanmean(np.diag(rsms[item].values))
+    axes[plot_idx].set_title(f'{item} (r = {mean_rel:.3f})', fontsize=20)
     axes[plot_idx].set_xticks([])
     axes[plot_idx].set_yticks([])
 # Add the colorbar
 cbar_ax = fig.add_axes([0.90, 0.30, 0.012, 0.40])
-sm = plt.cm.ScalarMappable(cmap='RdBu')
+sm = plt.cm.ScalarMappable(cmap='RdBu', norm=plt.Normalize(vmin=-1, vmax=1))
 cbar = fig.colorbar(sm, cax=cbar_ax)
 cbar.set_label('Pearson r', labelpad=5, fontsize=15)
 ```
 
-### Interpretation
+### RSM Patterns
 
-- *VISp*: Diagonal is dark for almost all bins, implying high trial-to-trial reliability.
+- **VISp** *(High trial-to-trial reliability)*:
     - Similarity between off-diagonal bins is not grouped into 2 distinct structures but shows small blocks containing adjacent bins. This suggests the area is capturing adjacent bin similarities which usually have similar visual cue features.
-- *VISl and VISal*: Shows similar reliability as VISp. VISal trial-to-trial reliability reduces in the central bins. 
-    - Structure is grouped into 2 distinct areas almost coinciding with the stimulus clusters
+- **VISl and VISal** *(Highest reliability)*:
+    - Structure is grouped into 2 distinct areas almost coinciding with the stimulus clusters.
     - The striped pattern within the group in certain bins suggests selectivity for visual features that recur across the movie.
-- *VISpm*: The reliability measure is lower at the beginning and at the end.
-    - Structure is grouped along the diagonal in blocks sizes of ~4 bins, ~7 bins, and ~10 bins.
-- *VISam*: The reliability measure is low in the central bins.
-    - Structure is grouped into 3 distinct areas with boundaries at 5th and 10th bins. This matches the bin when the motion blur appears and disappears in the movie.
-    - The striped pattern within the groups is present but does not extend outside the group unlike VISl and VISal.
-- *VISrl and LGd*: Reliability measure is the lowest in both.
+- **VISpm and VISam** *(High reliability)*:
+    - Structure is grouped again into 2 distinct areas. The lower left group is further divided into 2 groups with a small difference in correlation
+    - The striped pattern is less frequent but when present shows higher correlations.
+    - VISpm has fewer striped pattern when compared with VISam.
+- **VISrl and LGd** *(Lowest reliability)*:
     - The off-diagonal structure is present but no strong grouping is visible.
-- *LP*: Absence of diagonal contrast makes commenting on reliability difficult.
+- **LP** *(High reliability)*:
     - Off-diagonal similarity bins are equally similar throughout.
+    - One stripe is visible in the region of bins 30-40 which coincides with stimulus cluster boundary.  
 
-The findings above suggest the presence of hierarchical representational maps which evolve along the neuronal circuit.
+The findings above suggest the presence of hierarchical representational maps which evolve along the neuronal circuit.  
+

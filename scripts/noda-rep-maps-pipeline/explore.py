@@ -13,6 +13,8 @@ import os
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import EcephysProjectCache
 from allensdk.core.brain_observatory_cache import BrainObservatoryCache
 from sklearn.cluster import KMeans
+import rsatoolbox
+import imageio
 
 # Load one calcium imaging file to confirm binning
 # 1. Get the repo root
@@ -248,15 +250,18 @@ g = sns.FacetGrid(behavioral_metrics, row = 'metric', sharey = False, height = 3
 g.map_dataframe(sns.lineplot, x='repeat', y='value', hue='block', marker='o')
 g.add_legend()
 # There is quite a difference between 2 blocks
-block1_means = behavioral_metrics[behavioral_metrics['block'] == 'Block 1'].groupby('metric')['value'].mean()
-for ax, metric in zip(g.axes.flat, block1_means.index):
-    ax.axhline(block1_means[metric], linestyle='--', alpha=0.5, color='blue')
+block1_mean = behavioral_metrics[behavioral_metrics['block'] == 'Block 1'].groupby('metric')['value'].mean()
+block2_mean = behavioral_metrics[behavioral_metrics['block'] == 'Block 2'].groupby('metric')['value'].mean()
+for ax, metric in zip(g.axes.flat, block1_mean.index):
+    ax.axhline(block1_mean[metric], linestyle='--', alpha=0.5, color='blue')
+    ax.axhline(block2_mean[metric], linestyle='--', alpha=0.5, color='orange')
 # Both blocks are recorded under 2 different behavioral states; with block 1 showing stationary condition
 
 # Get the neural activity data for block 1
 neuropixels_data = [area[:, :, 0] for area in data['informative_rater_mat'][0][:8]]
 # Define the number of bins
-n_bins = 30
+n_bins = 100
+frames_per_bin = 9
 # Define the number of trials
 n_trials = 10
 # Initialize a population reponse space variable
@@ -265,8 +270,8 @@ rsms = {}
 for idx, area in enumerate(brain_areas):
     # Get the number of neurons
     n_neurons = neuropixels_data[idx].shape[0]
-    # Reshape into 10 repeats x 30 bins x 30 frames
-    reshaped_data = np.reshape(neuropixels_data[idx], (n_neurons, n_trials, n_bins, n_bins))
+    # Reshape into 10 repeats x 100 bins x 9 frames
+    reshaped_data = np.reshape(neuropixels_data[idx], (n_neurons, n_trials, n_bins, frames_per_bin))
     # Average out the frame
     binned_data = np.mean(reshaped_data, axis = 3)
     # Transpose to change the structure to bins x repeats x neurons
@@ -308,74 +313,71 @@ fig, axes = plt.subplots(2, 4)
 axes = axes.flatten()
 plot_idx = 0
 for item in rsms:
-    sns.heatmap(rsms[item], ax=axes[plot_idx], cmap='Reds', cbar=False, square=True)
+    sns.heatmap(rsms[item], ax=axes[plot_idx], cmap='RdBu', cbar=False, square=True,
+                vmin = -1, vmax = 1)
     axes[plot_idx].set_title(item)
     axes[plot_idx].set_xticks([])
     axes[plot_idx].set_yticks([])
     plot_idx += 1
 
 # Dimension reduction via MDS
-neural_mds = {}
 mds = MDS(n_components=2, dissimilarity='precomputed', random_state=23, n_init=1)
+neural_mds = {}
 for area in rsms:
     rsm_for_mds = rsms[area].values.copy()
     np.fill_diagonal(rsm_for_mds, 1)
     neural_mds[area] = mds.fit_transform(1 - rsm_for_mds)
-    mds_df = pd.DataFrame(neural_mds[area], columns=['MDS1', 'MDS2'])
-    fig, ax = plt.subplots()
-    sns.scatterplot(data=mds_df, x='MDS1', y='MDS2', ax=ax)
-    ax.set_title(area)
-    ax.set_xlabel('')
-    ax.set_ylabel('')
-    ax.set_xticklabels([])
-    ax.set_yticklabels([])
 
 # Validate against the stimulus data
 # Download Natural Movie 1
 movie = cache.get_natural_movie_template(1)
-print(movie.shape)
-# Bin movie frames into 30 one-second bins
-movie_binned = movie.reshape(30, 30, 304, 608).mean(axis=1)  # (30, 304, 608)
-movie_flat = movie_binned.reshape(30, -1).astype(float)       # (30, 184832)
-# Create a Pixel Similarity Matrix (30 x 30)
+# Bin movie frames into 100 9-frame bins (~ 300 ms)
+movie_binned = movie.reshape(100, 9, 304, 608).mean(axis=1)
+movie_flat = movie_binned.reshape(100, -1).astype(float)
+# Create a Pixel Similarity Matrix (100 x 100)
 pixel_similarity = 1 - cdist(movie_flat, movie_flat, metric='correlation')
-print('Pixel similarity matrix shape:', pixel_similarity.shape)
-# Plot
-plt.figure(figsize=(6,6))
-plt.imshow(pixel_similarity, cmap='RdBu')
-plt.colorbar(label='Pixel correlation')
 
 # Apply MDS for visualization
-mds = MDS(n_components=2, dissimilarity='precomputed', random_state=23)
-stimulus_mds = mds.fit_transform(1 - pixel_similarity)
-# 2 distinct areas visible in some RSMs
+stimulus_mds = MDS(n_components=2, dissimilarity='precomputed', random_state=23, n_init=1).fit_transform(1 - pixel_similarity)
 stimulus_clusters = KMeans(n_clusters=2, random_state=23).fit_predict(stimulus_mds)
-# Visualize the stimulus structure with those 2 clusters
-fig, ax = plt.subplots()
-scatter = ax.scatter(stimulus_mds[:, 0], stimulus_mds[:, 1], c=stimulus_clusters)
-ax.set_xlabel('MDS1')
-ax.set_ylabel('MDS2')
-ax.set_title('MDS of stimulus structure')
 
 # Neural MDS colored by stimulus clusters — Procrustes-aligned to stimulus MDS
 cluster_palette = sns.color_palette('Dark2', n_colors=2)
-colors = [cluster_palette[c] for c in stimulus_clusters]
 fig, axes = plt.subplots(2, 4, figsize=(16, 8))
 axes = axes.flatten()
 for plot_idx, area in enumerate(neural_mds):
     _, aligned, _ = procrustes(stimulus_mds, neural_mds[area])
-    axes[plot_idx].scatter(aligned[:, 0], aligned[:, 1], c=colors, s=40)
+    for c_idx in range(2):
+        mask = stimulus_clusters == c_idx
+        axes[plot_idx].scatter(aligned[mask, 0], aligned[mask, 1],
+                               color=cluster_palette[c_idx], s=40)
     axes[plot_idx].set_title(area)
-    axes[plot_idx].set_xticklabels([])
-    axes[plot_idx].set_yticklabels([])
+    axes[plot_idx].set_xticks([])
+    axes[plot_idx].set_yticks([])
 
 # What is the pixel similarity capturing?
-fig, axes = plt.subplots(5, 6, figsize=(15, 10))
-axes = axes.flatten()
-for i in range(30):
-    axes[i].imshow(movie_binned[i], cmap='gray')
-    axes[i].set_title(f'Bin {i} | C{stimulus_clusters[i]}', 
-                      color='yellow' if stimulus_clusters[i] == 0 else 'purple')
-    axes[i].axis('off')
-plt.tight_layout()
-# The car appears around bins 9, 10, 11
+# Check out the movie clip
+imageio.mimwrite('scripts/noda-rep-maps-pipeline/natural_movie1.mp4', movie, format='ffmpeg', fps=30)
+# Alley with couple till 4-5 seconds
+# Wall with the 3rd individual's shadow on it from 6-10 seconds
+# Car completely in view at around 12 seconds
+# Couple enters around 15-16 second, walks to car and enter
+
+# Compare both RSMs for each area
+triu_idx = np.triu_indices(n_bins, k=1)
+pixel_rdm = rsatoolbox.rdm.RDMs((1 - pixel_similarity)[triu_idx].reshape(1, -1))
+rsa_r = {}
+for area in brain_areas:
+    rsm_vals = np.nan_to_num(rsms[area].values, nan=0.0)
+    neural_rdm = rsatoolbox.rdm.RDMs((1 - rsm_vals)[triu_idx].reshape(1, -1))
+    rsa_r[area] = float(rsatoolbox.rdm.compare(neural_rdm, pixel_rdm, method='spearman')[0, 0])
+
+fig, ax = plt.subplots(figsize=(10, 5))
+bars = ax.bar(brain_areas, [rsa_r[a] for a in brain_areas],
+              color=sns.color_palette('muted', len(brain_areas)))
+ax.axhline(0, color='black', linewidth=0.8, linestyle='--')
+ax.set_ylabel('Spearman r  (neural RDM vs pixel RDM)')
+ax.set_title('RSA: Session 756029989 Block 1 — neural RDMs vs pixel RDM')
+for bar, area in zip(bars, brain_areas):
+    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
+            f'{rsa_r[area]:.3f}', ha='center', va='bottom', fontsize=9)
