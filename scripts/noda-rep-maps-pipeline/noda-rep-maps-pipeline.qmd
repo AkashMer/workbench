@@ -2,11 +2,9 @@
 title: Estimation of Representational Maps in Mouse Visual Areas (Noda et al., 2024)
 jupyter: python3
 format: gfm
-execute:
-  cache: true
 ---
 
-This post implements the representational map estimation pipeline visualized in [[@Noda_2024-03-22]].  
+This post implements the representational map estimation pipeline visualized in [[Noda_2024-03-22]].  
 
 ## Stimulus Description
 ### Experimental Setup
@@ -44,7 +42,7 @@ warnings.filterwarnings('ignore', message='pkg_resources is deprecated')
 warnings.filterwarnings('ignore', category=UserWarning, module='allensdk')
 warnings.filterwarnings('ignore', category=RuntimeWarning, module='threadpoolctl')
 warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
-import os
+import os, shutil
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -75,6 +73,12 @@ movie = cache.get_natural_movie_template(1)
 Path('attachments').mkdir(exist_ok=True)
 if not Path('attachments/natural_movie1.mp4').exists():
     imageio.mimwrite('attachments/natural_movie1.mp4', movie, format='ffmpeg', fps=30)
+# Save the movie during the final render to website folder
+nole_nexus = os.environ.get('NOLE_NEXUS')
+if nole_nexus:
+    dest = Path(nole_nexus) / "Nole-Nexus Website/Workbench/noda-rep-maps-pipeline/attachments"
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy('attachments/natural_movie1.mp4', dest)
 
 # Bin movie frames into 100 nine-frame bins (~300 ms)
 movie_binned = movie.reshape(100, 9, 304, 608).mean(axis=1)
@@ -121,10 +125,6 @@ ax_scatter.set_ylabel('MDS2', fontsize=label_fontsize)
 ax_scatter.set_xticklabels([])
 ax_scatter.set_yticklabels([])
 ax_scatter.set_title('MDS of stimulus structure', fontsize=title_fontsize, pad=8)
-# Allows consistency across dark/light mode
-fig.patch.set_alpha(0)
-for ax in fig.get_axes():
-    ax.patch.set_alpha(0)
 plt.show();
 ```
 
@@ -342,14 +342,10 @@ for ax, metric in zip(g.axes.flat, y_labels):
     for block, color in block_colors.items():
         mean_val = behavioral_metrics.query('metric == @metric and block == @block')['value'].mean()
         ax.axhline(mean_val, color=color, alpha=0.5, linestyle='--', linewidth=1.5)
-# Allows consistency across dark/light mode
-g.fig.patch.set_alpha(0)
-for ax in g.axes.flat:
-    ax.patch.set_alpha(0)
 plt.show();
 ```
 
-The full block-by-block RSM comparison of the two candidate sessions is shown in [Appendix A](#appendix-a).
+The full block-by-block RSM comparison of the two candidate sessions is shown in [Appendix](#appendix).
 
 ## High-Dimensional Population Response Space
 
@@ -429,10 +425,6 @@ cbar_ax = fig.add_axes([0.90, 0.30, 0.012, 0.40])
 sm = plt.cm.ScalarMappable(cmap='RdBu', norm=plt.Normalize(vmin=-1, vmax=1))
 cbar = fig.colorbar(sm, cax=cbar_ax)
 cbar.set_label('Pearson r', labelpad=5, fontsize=15)
-# Allows consistency across dark/light mode
-fig.patch.set_alpha(0)
-for ax in fig.get_axes():
-    ax.patch.set_alpha(0)
 plt.show();
 ```
 
@@ -486,10 +478,6 @@ for plot_idx, area in enumerate(brain_areas):
     axes[plot_idx].set_title(area, fontsize=20)
     axes[plot_idx].set_xticks([])
     axes[plot_idx].set_yticks([])
-# Allows consistency across dark/light mode
-fig.patch.set_alpha(0)
-for ax in axes.flat:
-    ax.patch.set_alpha(0)
 plt.show();
 ```
 
@@ -518,9 +506,6 @@ ax.set_xlabel('')
 for i, area in enumerate(brain_areas):
     ax.text(i, rsa_r[area] + 0.005, f'{rsa_r[area]:.3f}', ha='center', va='bottom', fontsize=9)
 plt.tight_layout()
-# Allows consistency across dark/light mode
-fig.patch.set_alpha(0)
-ax.patch.set_alpha(0)
 plt.show();
 ```
 
@@ -531,10 +516,7 @@ Above comparison was done using **Python Representational Similarity Analysis to
 - *VISl*, *VISal* and *VISrl* sit between the above 2 extremes which aligns with their role as intermediates between primary visual area and higher order visual areas along the ventral and dorsal streams (VISal and VISrl) respectively. The ventral stream specializes in fine spatial details such as shape, texture and object recognition[@Harris_2019-11; @Siegle_2021-04a].
 - *LGd*, a feedforward relay center and *LP*, a higher order routing center show inverted pattern relative to their expected roles[@Harris_2019-11; @Siegle_2021-04a]. LGd's low mean trial-to-trial reliability despite high RDM correlation between the response and stimulus space is puzzling. LP's low neuron count (`27`) also limits confidence in its estimate. Further investigation of other sessions is needed to confirm this pattern.
 
-```{=html}
-<details id="appendix-a">
-<summary><strong>Appendix A</strong></summary>
-```
+## Appendix {#appendix}
 
 ```{python}
 #| code-fold: true
@@ -569,10 +551,6 @@ for ax, metric in zip(g.axes.flat, y_labels):
     for block, color in block_colors.items():
         mean_val = behavioral_metrics_755.query('metric == @metric and block == @block')['value'].mean()
         ax.axhline(mean_val, color=color, alpha=0.5, linestyle='--', linewidth=1.5)
-# Allows consistency across dark/light mode
-g.fig.patch.set_alpha(0)
-for ax in g.axes.flat:
-    ax.patch.set_alpha(0)
 plt.show();
 ```
 
@@ -610,14 +588,7 @@ for row_idx, (label, (sess_data, block_idx)) in enumerate(sessions.items()):
                 spine.set_edgecolor('green')
                 spine.set_linewidth(2.5)
     axes[row_idx, 0].set_ylabel(label, fontsize=10, labelpad=6)
-
-# Allows consistency across dark/light mode
-fig.patch.set_alpha(0)
-for ax in axes.flat:
-    ax.patch.set_alpha(0)
 plt.show();
 ```
 
-```{=html}
-</details>
-```
+## References
