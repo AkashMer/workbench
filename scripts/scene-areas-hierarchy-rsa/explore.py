@@ -53,6 +53,11 @@ timing_onsets = pd.read_table(behavior_zip_file.open(formal_Time_record_filepath
 trial_conditions.shape
 trial_conditions.head()
 # Columns of interest: 1 map, 2 walking direction, 8 allocentric direction and 9 egocentric direction
+# What are the unique number of maps used?
+trial_conditions[1].value_counts() # 3 maps
+# What are the unique number of walking directions?
+trial_conditions[2].value_counts() # 4 directions
+# Check out the trial timings and period onset timings
 timing_onsets.shape
 timing_onsets.head()
 # How many trials per run?
@@ -61,3 +66,16 @@ timing_onsets[12].value_counts()
 # How are the periods marked?
 np.diff(timing_onsets.iloc[0])
 # Columns 4 & 6 gives onset of walking and facing periods, the ones I am interested in
+
+# After some reading of the SM task yesterday, I think it would be better if I exclude
+# the facing period as well since the SM task starts with the facing period, so it would
+# be better to only have the walking period to capture the scene perception aspect of the
+# task. Also the data description explicitly states, the walking period were identical for both
+# HND task and SM task
+
+# The video examples of the walking period for either task cover the following combinations
+# map 1 - directions 2, 4
+# map 4 - directions 2, 3, 4
+# map 5 - directions 1, 3, 4
+# I will have to check if the map notations are locally specific to each subject since
+# each subject was only showed 3 maps pseudorandomly selected
