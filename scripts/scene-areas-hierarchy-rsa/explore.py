@@ -97,12 +97,20 @@ len(subject_list) # 19 subjects, not IDed as 1-19
 behavior_data = pd.DataFrame()
 for sub in subject_list:
     filepath = f'fMRI_behavior/sub_{sub}_formal_rawdata.txt'
-    trial_cond = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath),
-                                names = ['participant_id', 'map', 'walking_direction', 'trial_type'],
-                                usecols = [0, 1, 2, 4])
+    trial_cond = pd.read_table(behavior_zip_file.open(filepath),
+                                names = ['map', 'walking_direction', 'trial_type'],
+                                usecols = [1, 2, 4])
+    # Col 0 is not participant id
+    trial_cond['participant_id'] = sub
     behavior_data = pd.concat([behavior_data, trial_cond])
 # What are the unique map values across all subjects?
 behavior_data['map'].value_counts()
 # All subjects have maps 1, 2 & 3; so no information which 3/6 maps were pseudo randomly selected is available
 # Categorical grouping of stimuli, first by the 4 walking directions and then by the 3 unique maps
 # is the only way forward
+
+# What is the counts of each grouping for Subject 23?
+behavior_data.query('participant_id == 23')[['walking_direction', 'map']].value_counts()
+# 12 trials for most of the combinations, maximum of 20 trials in 2,1 combination
+
+# Next Step: Build Stimulus Categorical RDM
