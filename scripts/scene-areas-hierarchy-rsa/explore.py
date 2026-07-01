@@ -133,7 +133,7 @@ map_rdm = (maps[:, None] != maps[None, :]).astype(int)
 extract_path = data_path / "extracted" / "subject_23"
 zip_file.extractall(extract_path)
 
-# DCM to Nifti conversion done in shell
+# DCM to Nifti conversion done in terminal
 # dcm2niix -z y -f "sub23_bold_run1" 
 # -o data/scene-areas-hierarchy-rsa/nifti/sub23 
 # data\scene-areas-hierarchy-rsa\extracted\subject_23\MRI_Scanning_sub23\bold_run1
@@ -143,4 +143,7 @@ nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
 sub23_bold_run1 = nib.load(nifti_path)
 # Check headers
 print(sub23_bold_run1.header)
-# 4d image: 112 x 112 x 62 voxels
+# 4d image: 112 x 112 x 62 voxels x 495 volumes
+
+# All dcm files converted to nifti in terminal
+# Rearranged in BIDS format under the data/scene-area-hierarchy-rsa/bids
