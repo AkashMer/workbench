@@ -54,7 +54,7 @@ trial_conditions.shape
 trial_conditions.head()
 # Columns of interest: 1 map, 2 walking direction, 8 allocentric direction and 9 egocentric direction
 # What are the unique number of maps used?
-trial_conditions[1].value_counts() # 3 maps
+trial_conditions[1].value_counts() # 3 maps - 1, 3, 2
 # What are the unique number of walking directions?
 trial_conditions[2].value_counts() # 4 directions
 # Check out the trial timings and period onset timings
@@ -79,3 +79,30 @@ np.diff(timing_onsets.iloc[0])
 # map 5 - directions 1, 3, 4
 # I will have to check if the map notations are locally specific to each subject since
 # each subject was only showed 3 maps pseudorandomly selected
+formal_rawdata_filepath8 = 'fMRI_behavior/sub_8_formal_rawdata.txt'
+# Load the tab separated data
+trial_conditions8 = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath), header=None)
+# What are the unique number of maps used?
+trial_conditions8[1].value_counts() # 3 maps 1, 3, 2
+# Same as subject 23
+
+# Confirming for all subjects under fMRI
+# Get all the subject ids for the fMRI data
+subject_list = [int(name.split('_')[2]) for name in behavior_zip_file.namelist() 
+                if 'MACOSX' not in name and 'rawdata' in name]
+# Convfirm the number of subjects avaliable
+len(subject_list) # 19 subjects, not IDed as 1-19
+
+# Collate all the behavior data into one large dataframe
+behavior_data = pd.DataFrame()
+for sub in subject_list:
+    filepath = f'fMRI_behavior/sub_{sub}_formal_rawdata.txt'
+    trial_cond = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath),
+                                names = ['participant_id', 'map', 'walking_direction', 'trial_type'],
+                                usecols = [0, 1, 2, 4])
+    behavior_data = pd.concat([behavior_data, trial_cond])
+# What are the unique map values across all subjects?
+behavior_data['map'].value_counts()
+# All subjects have maps 1, 2 & 3; so no information which 3/6 maps were pseudo randomly selected is available
+# Categorical grouping of stimuli, first by the 4 walking directions and then by the 3 unique maps
+# is the only way forward
