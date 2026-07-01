@@ -4,6 +4,7 @@ import zipfile
 import io
 import numpy as np
 import pandas as pd
+import nibabel as nib
 
 # Check the structure of the data file
 # 1. Get the data root
@@ -114,3 +115,32 @@ behavior_data.query('participant_id == 23')[['walking_direction', 'map']].value_
 # 12 trials for most of the combinations, maximum of 20 trials in 2,1 combination
 
 # Next Step: Build Stimulus Categorical RDM
+directions = behavior_data.query('participant_id == 23')['walking_direction'].unique()
+# Sort them in ascending order
+directions = np.sort(directions)
+# Build the RDM for walking directions
+walking_direction_rdm = (directions[:, None] != directions[None, :]).astype(int)
+
+# Do the same for map
+maps = behavior_data.query('participant_id == 23')['map'].unique()
+# Sort them in ascending order
+maps = np.sort(maps)
+# Build the RDM for walking directions
+map_rdm = (maps[:, None] != maps[None, :]).astype(int)
+
+# Extract the fMRI data and load
+# 1. Extract under subject_23 folder
+extract_path = data_path / "extracted" / "subject_23"
+zip_file.extractall(extract_path)
+
+# DCM to Nifti conversion done in shell
+# dcm2niix -z y -f "sub23_bold_run1" 
+# -o data/scene-areas-hierarchy-rsa/nifti/sub23 
+# data\scene-areas-hierarchy-rsa\extracted\subject_23\MRI_Scanning_sub23\bold_run1
+
+# Load the nifti bold_run1 file
+nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
+sub23_bold_run1 = nib.load(nifti_path)
+# Check headers
+print(sub23_bold_run1.header)
+# 4d image: 112 x 112 x 62 voxels
