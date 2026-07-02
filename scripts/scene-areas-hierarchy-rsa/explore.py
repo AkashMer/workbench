@@ -139,11 +139,26 @@ zip_file.extractall(extract_path)
 # data\scene-areas-hierarchy-rsa\extracted\subject_23\MRI_Scanning_sub23\bold_run1
 
 # Load the nifti bold_run1 file
-nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
-sub23_bold_run1 = nib.load(nifti_path)
-# Check headers
-print(sub23_bold_run1.header)
+# nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
+# sub23_bold_run1 = nib.load(nifti_path)
+# # Check headers
+# print(sub23_bold_run1.header)
 # 4d image: 112 x 112 x 62 voxels x 495 volumes
 
 # All dcm files converted to nifti in terminal
-# Rearranged in BIDS format under the data/scene-area-hierarchy-rsa/bids
+# Rearranged in BIDS format under the data/scene-areas-hierarchy-rsa/bids
+
+# fMRIPrep setup
+# docker run --rm \
+#   -v -path to bids-:/data:ro \
+#   -v -path to output-:/out \
+#   -v -path to free surfer license-:/opt/freesurfer/license.txt:ro \
+#   nipreps/fmriprep:25.2.0 \
+#   /data /out participant \
+#   --participant-label 23 \
+#   --fs-license-file /opt/freesurfer/license.txt \
+#   --fs-no-reconall \
+#   --output-spaces MNI152NLin2009cAsym \
+#   --nprocs 8 \
+#   --omp-nthreads 4 \
+#   --mem-mb 10000
