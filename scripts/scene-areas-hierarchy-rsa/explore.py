@@ -6,13 +6,19 @@ import numpy as np
 import pandas as pd
 import nibabel as nib
 
+# All the fMRI data downloaded using the url manifest from scidb using aria2c
+# Command:
+# aria2c -c -x 16 -s 16 -k 1M --content-disposition \
+# -d /mnt/c/Users/akash/Documents/workbench/data/scene-areas-hierarchy-rsa/raw_fmri \
+# -i /mnt/c/Users/akash/Documents/workbench/data/scene-areas-hierarchy-rsa/scidb_manifest.txt
+
 # Check the structure of the data file
 # 1. Get the data root
 repo_root = Path.cwd()
-data_path = repo_root / "data" / "scene-areas-hierarchy-rsa"
+raw_data_path = repo_root / "data" / "scene-areas-hierarchy-rsa" / "raw_fmri"
 
 # 2. Initialize the subject 23 zip file
-path_to_zip = data_path / "MRI_Scanning_sub23.zip"
+path_to_zip = raw_data_path / "MRI_Scanning_sub23.zip"
 zip_file = zipfile.ZipFile(path_to_zip)
 
 # 3. Check the structure of the zip file
@@ -31,9 +37,11 @@ for bold_run in bold_runs:
     sum(1 for name in file_list if bold_run in name and not name.endswith('/'))*2, 's') # 2 sec for TR
 # ~16 mins for each run
 # How is each run divided for the 4 period: walking, facing, targeting, choice
+# Close the zip file connection
+zip_file.close()
 
 # Load the behavior zip file
-path_to_behavior_zip = data_path / "fMRI_behavior.zip"
+path_to_behavior_zip = raw_data_path / "fMRI_behavior.zip"
 behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
 behavior_zip_file.namelist()
 # Files are under fMRI_behavior/sub_xx_formal_rawdata.txt and sub_xx_formal_Time_record_t.txt
@@ -127,11 +135,13 @@ maps = behavior_data.query('participant_id == 23')['map'].unique()
 maps = np.sort(maps)
 # Build the RDM for walking directions
 map_rdm = (maps[:, None] != maps[None, :]).astype(int)
+# Close the behavior zip file connection
+behavior_zip_file.close()
 
 # Extract the fMRI data and load
 # 1. Extract under subject_23 folder
-extract_path = data_path / "extracted" / "subject_23"
-zip_file.extractall(extract_path)
+# extract_path = data_path / "extracted" / "subject_23"
+# zip_file.extractall(extract_path)
 
 # DCM to Nifti conversion done in terminal
 # dcm2niix -z y -f "sub23_bold_run1" 
@@ -162,3 +172,4 @@ zip_file.extractall(extract_path)
 #   --nprocs 8 \
 #   --omp-nthreads 4 \
 #   --mem-mb 10000
+# fMRIPrep test successful
