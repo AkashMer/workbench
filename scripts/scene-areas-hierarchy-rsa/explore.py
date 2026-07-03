@@ -15,7 +15,8 @@ import nibabel as nib
 # Check the structure of the data file
 # 1. Get the data root
 repo_root = Path.cwd()
-raw_data_path = repo_root / "data" / "scene-areas-hierarchy-rsa" / "raw_fmri"
+data_path = repo_root / "data" / "scene-areas-hierarchy-rsa"
+raw_data_path = data_path / "raw_fmri"
 
 # 2. Initialize the subject 23 zip file
 path_to_zip = raw_data_path / "MRI_Scanning_sub23.zip"
@@ -173,3 +174,44 @@ behavior_zip_file.close()
 #   --omp-nthreads 4 \
 #   --mem-mb 10000
 # fMRIPrep test successful
+
+# Explore the structure of scene area ROI masks
+scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
+scene_parcels_zip.namelist()
+# B/L PPA, RSC and TOS (OPA)
+# Explore the internal structure of each area map
+hdr = scene_parcels_zip.read('scene_parcels/lPPA.hdr')
+img = scene_parcels_zip.read('scene_parcels/lPPA.img')
+lPPA_file = nib.AnalyzeImage.make_file_map()
+lPPA_file['header'].fileobj = io.BytesIO(hdr)
+lPPA_file['image'].fileobj = io.BytesIO(img)
+lPPA_map = nib.AnalyzeImage.from_file_map(lPPA_file)
+# Check out the span and voxel size
+lPPA_map.affine # Voxel size 2mm
+(np.array(lPPA_map.shape) - 1)*2 # Span: 156mm x 188mm x 136mm
+# Are the values binary or probabilistic?
+np.unique(lPPA_map.get_fdata()) # 0 & 1 - Binary
+# Close the zip connection
+scene_parcels_zip.close()
+
+# Explore the primary area ROI masks
+vis_parcels_zip = zipfile.ZipFile(data_path / "visfAtlas.zip")
+vis_parcels_zip.namelist()
+# Extract the V1/V2 volume and surface maps
+atlas_dir = data_path / "atlases"
+vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_MNI152_volume.nii.gz', atlas_dir)
+vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_FSL.xml', atlas_dir)
+for hemi in ['lh', 'rh']:
+    for region in ['v1d', 'v1v', 'v2d', 'v2v']:
+        vis_parcels_zip.extract(f'visfAtlas/FreeSurfer/MPM_{hemi}_{region}.label', atlas_dir)
+# Load the file volume file
+visf_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_MNI152_volume.nii.gz"
+visf_img = nib.load(visf_path)
+# Check the voxel size and span
+visf_img.affine # Voxel size 1 mm
+(np.array(visf_img.shape) - 1)*1 # 181mm x 217mm x 181mm
+np.unique(visf_img.get_fdata()) # Areas labelled by number from XML file
+# Check the XML number-area mappings
+xml_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_FSL.xml"
+print(xml_path.read_text())
+#  {ld, lv, rd, rv} : V1 = {12, 15, 28, 31} & V2 = {13, 16, 29, 32}
