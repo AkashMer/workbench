@@ -5,6 +5,10 @@ import io
 import numpy as np
 import pandas as pd
 import nibabel as nib
+import pydicom
+from nibabel.nicom import dicomwrappers
+from ants import from_numpy, image_read, registration
+from templateflow import api as tflow
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -187,7 +191,7 @@ lPPA_file['header'].fileobj = io.BytesIO(hdr)
 lPPA_file['image'].fileobj = io.BytesIO(img)
 lPPA_map = nib.AnalyzeImage.from_file_map(lPPA_file)
 # Check out the span and voxel size
-lPPA_map.affine # Voxel size 2mm
+lPPA_map.affine # Voxel size 2mm & MNI152NLin6Asym space
 (np.array(lPPA_map.shape) - 1)*2 # Span: 156mm x 188mm x 136mm
 # Are the values binary or probabilistic?
 np.unique(lPPA_map.get_fdata()) # 0 & 1 - Binary
@@ -204,14 +208,51 @@ vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_FSL.xml', atlas_dir)
 for hemi in ['lh', 'rh']:
     for region in ['v1d', 'v1v', 'v2d', 'v2v']:
         vis_parcels_zip.extract(f'visfAtlas/FreeSurfer/MPM_{hemi}_{region}.label', atlas_dir)
+# Close the zip file
+vis_parcels_zip.close()
 # Load the file volume file
 visf_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_MNI152_volume.nii.gz"
 visf_img = nib.load(visf_path)
 # Check the voxel size and span
-visf_img.affine # Voxel size 1 mm
+visf_img.affine # Voxel size 1 mm & MNI152NLin6Asym space
 (np.array(visf_img.shape) - 1)*1 # 181mm x 217mm x 181mm
 np.unique(visf_img.get_fdata()) # Areas labelled by number from XML file
 # Check the XML number-area mappings
 xml_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_FSL.xml"
 print(xml_path.read_text())
 #  {ld, lv, rd, rv} : V1 = {12, 15, 28, 31} & V2 = {13, 16, 29, 32}
+# Both Julian and visfAtlas ROI maps are in the MNI152NLin6Asym space
+
+# Define the candidate selection logic
+# 1. Exluded if ROI tSNR < 30
+# 2. Remaining ranked by minimum mean FD
+# 3. Ties broken by DVARS
+
+# Collate all frames from bold_run1
+zip_file = zipfile.ZipFile(path_to_zip)
+run1_files = sorted(name for name in zip_file.namelist() if 'bold_run1' in name and not name.endswith('/'))
+running_sum = np.zeros((112, 112, 62))
+bold1_ants_list = []
+# Get all frames in ANTs format as a list
+for file in run1_files:
+    # Read DICOM file
+    dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
+    # Wrap the data to read directly from the zipped format
+    dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
+    # Extract the 3D data for each frame
+    dcm_3d = dcm_wrap.get_data()
+    # Add to the running sum to get the mean value for normalization
+    running_sum += dcm_3d
+    # Convert to ANTs format
+    ants_format = from_numpy(dcm_3d, spacing=(2, 2, 2.3))
+    # Append to list
+    bold1_ants_list.append(ants_format)
+
+# Compute the mean frame and convert to ANTs format
+mean_frame_ants = from_numpy(running_sum/495, spacing = (2, 2, 2.3))
+# Get the MNI152NLin6Asym from TemplateFlow
+t1_path = tflow.get('MNI152NLin6Asym', resolution=1, suffix='T1w', desc = None)
+# Convert to ANTs format
+mni_template_ants = image_read(str(t1_path))
+# Register the mean frame to MNI152NLin6Asym
+ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
