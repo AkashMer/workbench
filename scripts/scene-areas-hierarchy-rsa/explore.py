@@ -7,8 +7,9 @@ import pandas as pd
 import nibabel as nib
 import pydicom
 from nibabel.nicom import dicomwrappers
-from ants import from_numpy, image_read, registration
+from ants import from_numpy, from_nibabel_nifti, image_read, registration, apply_transforms, list_to_ndimage, make_image
 from templateflow import api as tflow
+from scipy import ndimage
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -23,7 +24,7 @@ data_path = repo_root / "data" / "scene-areas-hierarchy-rsa"
 raw_data_path = data_path / "raw_fmri"
 
 # 2. Initialize the subject 23 zip file
-path_to_zip = raw_data_path / "MRI_Scanning_sub23.zip"
+path_to_zip = raw_data_path / "MRI_Scanning_sub9.zip"
 zip_file = zipfile.ZipFile(path_to_zip)
 
 # 3. Check the structure of the zip file
@@ -247,6 +248,8 @@ for file in run1_files:
     ants_format = from_numpy(dcm_3d, spacing=(2, 2, 2.3))
     # Append to list
     bold1_ants_list.append(ants_format)
+# Close the zip file
+zip_file.close()
 
 # Compute the mean frame and convert to ANTs format
 mean_frame_ants = from_numpy(running_sum/495, spacing = (2, 2, 2.3))
@@ -256,3 +259,75 @@ t1_path = tflow.get('MNI152NLin6Asym', resolution=1, suffix='T1w', desc = None)
 mni_template_ants = image_read(str(t1_path))
 # Register the mean frame to MNI152NLin6Asym
 ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
+
+# Convert the primary visual areas map to ANTs format
+visf_ants = image_read(str(visf_path))
+# Exclude other areas besides V1 & V2
+v1_labels = [12, 15, 28, 31]
+v2_labels = [13, 16, 29, 32]
+visf_new_array = np.zeros(visf_ants.numpy().shape, dtype=np.int16)
+# Mark the v1 areas
+visf_new_array[np.isin(visf_ants.numpy(), v1_labels)] = 1
+# Mark the v2 areas
+visf_new_array[np.isin(visf_ants.numpy(), v2_labels)] = 2
+# Update the ants object with other areas excluded
+visf_visual_ants = visf_ants.new_image_like(visf_new_array)
+
+# Convert the scene area maps to ANTs format
+scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
+scene_areas_pairs = {1: ('lPPA', 'rPPA'), 2: ('lRSC', 'rRSC'), 3:('lTOS', 'rTOS')}
+scene_map = np.zeros(lPPA_map.shape, dtype=np.int16)
+for label, (left, right) in scene_areas_pairs.items():
+    # Get the left data
+    hdr_l = scene_parcels_zip.read(f'scene_parcels/{left}.hdr')
+    img_l = scene_parcels_zip.read(f'scene_parcels/{left}.img')
+    left_file = nib.AnalyzeImage.make_file_map()
+    left_file['header'].fileobj = io.BytesIO(hdr_l)
+    left_file['image'].fileobj = io.BytesIO(img_l)
+    left_map = nib.AnalyzeImage.from_file_map(left_file).get_fdata()
+
+    # Get the right data
+    hdr_r = scene_parcels_zip.read(f'scene_parcels/{right}.hdr')
+    img_r = scene_parcels_zip.read(f'scene_parcels/{right}.img')
+    right_file = nib.AnalyzeImage.make_file_map()
+    right_file['header'].fileobj = io.BytesIO(hdr_r)
+    right_file['image'].fileobj = io.BytesIO(img_r)
+    right_map = nib.AnalyzeImage.from_file_map(right_file).get_fdata()
+
+    # Change the value from zero to appropriate label for each area
+    scene_map[(left_map == 1) | (right_map == 1)] = label
+# Sanity check
+np.unique(scene_map) # 0, 1, 2, 3
+# Change to nifti format
+scene_nifti = nib.Nifti1Image(scene_map, lPPA_map.affine)
+# Convert to ANTs format
+scene_ants = from_nibabel_nifti(scene_nifti)
+# Close the scene zip file
+scene_parcels_zip.close()
+
+# Transform both maps onto subject MNI space
+visf_subject_ants = apply_transforms(fixed = mean_frame_ants,
+                                        moving = visf_visual_ants,
+                                        transformlist = ants_res['fwdtransforms'],
+                                        whichtoinvert = [True],
+                                        interpolator='nearestNeighbor')
+scene_subject_ants = apply_transforms(fixed = mean_frame_ants,
+                                        moving = scene_ants,
+                                        transformlist = ants_res['fwdtransforms'],
+                                        whichtoinvert = [True],
+                                        interpolator='nearestNeighbor')
+
+# Compute the motion correction metrics on the BOLD run
+bold1_4d = list_to_ndimage(make_image((*bold1_ants_list[0].shape, len(bold1_ants_list)), pixeltype='unsigned int',
+                                        origin = (*bold1_ants_list[0].origin, 0)),
+                            bold1_ants_list)
+# Compute mean and std across time axis
+tSNR_3d = bold1_4d.numpy().mean(axis = 3) / bold1_4d.numpy().std(axis = 3)
+
+# Compute the ROI tSNR for V1/V2
+ndimage.mean(tSNR_3d, visf_subject_ants.numpy(), index = [1, 2])
+# Compute the ROI tSNR for scene areas
+ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = [1, 2, 3])
+# All are below 30, plan is to compute all 3 metrics for all subjects
+# If all fail tSNR gate: shift the plan to normalize them on one scale
+# use the weakest link logic like the last post
