@@ -8,8 +8,10 @@ import nibabel as nib
 import pydicom
 from nibabel.nicom import dicomwrappers
 from ants import from_numpy, from_nibabel_nifti, image_read, registration, apply_transforms, list_to_ndimage, make_image
+from ants import read_transform
 from templateflow import api as tflow
 from scipy import ndimage
+from scipy.spatial.transform import Rotation
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -24,7 +26,7 @@ data_path = repo_root / "data" / "scene-areas-hierarchy-rsa"
 raw_data_path = data_path / "raw_fmri"
 
 # 2. Initialize the subject 23 zip file
-path_to_zip = raw_data_path / "MRI_Scanning_sub9.zip"
+path_to_zip = raw_data_path / "MRI_Scanning_sub23.zip"
 zip_file = zipfile.ZipFile(path_to_zip)
 
 # 3. Check the structure of the zip file
@@ -331,3 +333,32 @@ ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = [1, 2, 3])
 # All are below 30, plan is to compute all 3 metrics for all subjects
 # If all fail tSNR gate: shift the plan to normalize them on one scale
 # use the weakest link logic like the last post
+
+# Mean FD Computation - Only using evenly spaced 50 frames
+frame_fd_running_sum = 0
+for frame in np.linspace(1, len(bold1_ants_list) - 1, 50, dtype = int):
+    # Register each frame against previous frame
+    frame_reg = registration(fixed = bold1_ants_list[frame-1], moving = bold1_ants_list[frame],
+                                type_of_transform = 'Rigid')
+    # Load the transformed frame and extract the parameters
+    tx = read_transform(frame_reg['fwdtransforms'][0]).parameters
+    # Compute the eular angles from the rotation of the image
+    euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
+    # Convert to mm using 50 mm general head size
+    displacement = euler_angles * 50
+    # Get the translations from the transformed parameters
+    translations = tx[9:]
+    # Compute the FD for this frame
+    frame_fd = np.sum(np.abs(np.append(displacement, translations)))
+    # Add the each frame_fd to a running sum
+    frame_fd_running_sum += frame_fd
+# Compute the mean FD
+mean_fd = frame_fd_running_sum/50
+
+# DVARS computation
+# Compute the voxel differences between adjacent frame
+frame_diff = np.diff(bold1_4d.numpy().astype(np.float64), axis = 3)
+# Compute the RMS across all voxels
+rms = np.sqrt(np.mean(frame_diff, axis = (0,1,2))**2)
+# Compute the median RMS across the whole run
+median_dvars = np.median(rms)
