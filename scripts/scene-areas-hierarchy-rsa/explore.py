@@ -182,6 +182,7 @@ behavior_zip_file.close()
 #   --mem-mb 10000
 # fMRIPrep test successful
 
+# --- Scene Area Parcels ----
 # Explore the structure of scene area ROI masks
 scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
 scene_parcels_zip.namelist()
@@ -198,82 +199,6 @@ lPPA_map.affine # Voxel size 2mm & MNI152NLin6Asym space
 (np.array(lPPA_map.shape) - 1)*2 # Span: 156mm x 188mm x 136mm
 # Are the values binary or probabilistic?
 np.unique(lPPA_map.get_fdata()) # 0 & 1 - Binary
-# Close the zip connection
-scene_parcels_zip.close()
-
-# Explore the primary area ROI masks
-vis_parcels_zip = zipfile.ZipFile(data_path / "visfAtlas.zip")
-vis_parcels_zip.namelist()
-# Extract the V1/V2 volume and surface maps
-atlas_dir = data_path / "atlases"
-vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_MNI152_volume.nii.gz', atlas_dir)
-vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_FSL.xml', atlas_dir)
-for hemi in ['lh', 'rh']:
-    for region in ['v1d', 'v1v', 'v2d', 'v2v']:
-        vis_parcels_zip.extract(f'visfAtlas/FreeSurfer/MPM_{hemi}_{region}.label', atlas_dir)
-# Close the zip file
-vis_parcels_zip.close()
-# Load the file volume file
-visf_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_MNI152_volume.nii.gz"
-visf_img = nib.load(visf_path)
-# Check the voxel size and span
-visf_img.affine # Voxel size 1 mm & MNI152NLin6Asym space
-(np.array(visf_img.shape) - 1)*1 # 181mm x 217mm x 181mm
-np.unique(visf_img.get_fdata()) # Areas labelled by number from XML file
-# Check the XML number-area mappings
-xml_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_FSL.xml"
-print(xml_path.read_text())
-#  {ld, lv, rd, rv} : V1 = {12, 15, 28, 31} & V2 = {13, 16, 29, 32}
-# Both Julian and visfAtlas ROI maps are in the MNI152NLin6Asym space
-
-# Define the candidate selection logic
-# 1. Exluded if ROI tSNR < 30
-# 2. Remaining ranked by minimum mean FD
-# 3. Ties broken by DVARS
-
-# Collate all frames from bold_run1
-zip_file = zipfile.ZipFile(path_to_zip)
-run1_files = sorted(name for name in zip_file.namelist() if 'bold_run1' in name and not name.endswith('/'))
-running_sum = np.zeros((112, 112, 62))
-bold1_ants_list = []
-# Get all frames in ANTs format as a list
-for file in run1_files:
-    # Read DICOM file
-    dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
-    # Wrap the data to read directly from the zipped format
-    dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
-    # Extract the 3D data for each frame
-    dcm_3d = dcm_wrap.get_data()
-    # Add to the running sum to get the mean value for normalization
-    running_sum += dcm_3d
-    # Convert to ANTs format
-    ants_format = from_numpy(dcm_3d, spacing=(2, 2, 2.3))
-    # Append to list
-    bold1_ants_list.append(ants_format)
-# Close the zip file
-zip_file.close()
-
-# Compute the mean frame and convert to ANTs format
-mean_frame_ants = from_numpy(running_sum/495, spacing = (2, 2, 2.3))
-# Get the MNI152NLin6Asym from TemplateFlow
-t1_path = tflow.get('MNI152NLin6Asym', resolution=1, suffix='T1w', desc = None)
-# Convert to ANTs format
-mni_template_ants = image_read(str(t1_path))
-# Register the mean frame to MNI152NLin6Asym
-ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
-
-# Convert the primary visual areas map to ANTs format
-visf_ants = image_read(str(visf_path))
-# Exclude other areas besides V1 & V2
-v1_labels = [12, 15, 28, 31]
-v2_labels = [13, 16, 29, 32]
-visf_new_array = np.zeros(visf_ants.numpy().shape, dtype=np.int16)
-# Mark the v1 areas
-visf_new_array[np.isin(visf_ants.numpy(), v1_labels)] = 1
-# Mark the v2 areas
-visf_new_array[np.isin(visf_ants.numpy(), v2_labels)] = 2
-# Update the ants object with other areas excluded
-visf_visual_ants = visf_ants.new_image_like(visf_new_array)
 
 # Convert the scene area maps to ANTs format
 scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
@@ -307,58 +232,163 @@ scene_ants = from_nibabel_nifti(scene_nifti)
 # Close the scene zip file
 scene_parcels_zip.close()
 
-# Transform both maps onto subject MNI space
-visf_subject_ants = apply_transforms(fixed = mean_frame_ants,
-                                        moving = visf_visual_ants,
-                                        transformlist = ants_res['fwdtransforms'],
-                                        whichtoinvert = [True],
-                                        interpolator='nearestNeighbor')
-scene_subject_ants = apply_transforms(fixed = mean_frame_ants,
-                                        moving = scene_ants,
-                                        transformlist = ants_res['fwdtransforms'],
-                                        whichtoinvert = [True],
-                                        interpolator='nearestNeighbor')
+# --- Primary Visual Area parcels ---
+# Explore the primary area ROI masks
+vis_parcels_zip = zipfile.ZipFile(data_path / "visfAtlas.zip")
+vis_parcels_zip.namelist()
+# Extract the V1/V2 volume and surface maps
+atlas_dir = data_path / "atlases"
+vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_MNI152_volume.nii.gz', atlas_dir)
+vis_parcels_zip.extract('visfAtlas/nifti_volume/visfAtlas_FSL.xml', atlas_dir)
+for hemi in ['lh', 'rh']:
+    for region in ['v1d', 'v1v', 'v2d', 'v2v']:
+        vis_parcels_zip.extract(f'visfAtlas/FreeSurfer/MPM_{hemi}_{region}.label', atlas_dir)
+# Close the zip file
+vis_parcels_zip.close()
+# Load the file volume file
+visf_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_MNI152_volume.nii.gz"
+visf_img = nib.load(visf_path)
+# Check the voxel size and span
+visf_img.affine # Voxel size 1 mm & MNI152NLin6Asym space
+(np.array(visf_img.shape) - 1)*1 # 181mm x 217mm x 181mm
+np.unique(visf_img.get_fdata()) # Areas labelled by number from XML file
+# Check the XML number-area mappings
+xml_path = atlas_dir / "visfAtlas" / "nifti_volume" / "visfAtlas_FSL.xml"
+print(xml_path.read_text())
+#  {ld, lv, rd, rv} : V1 = {12, 15, 28, 31} & V2 = {13, 16, 29, 32}
+# Both Julian and visfAtlas ROI maps are in the MNI152NLin6Asym space
 
-# Compute the motion correction metrics on the BOLD run
-bold1_4d = list_to_ndimage(make_image((*bold1_ants_list[0].shape, len(bold1_ants_list)), pixeltype='unsigned int',
-                                        origin = (*bold1_ants_list[0].origin, 0)),
-                            bold1_ants_list)
-# Compute mean and std across time axis
-tSNR_3d = bold1_4d.numpy().mean(axis = 3) / bold1_4d.numpy().std(axis = 3)
+# Convert the primary visual areas map to ANTs format
+visf_ants = image_read(str(visf_path))
+# Exclude other areas besides V1 & V2
+v1_labels = [12, 15, 28, 31]
+v2_labels = [13, 16, 29, 32]
+visf_new_array = np.zeros(visf_ants.numpy().shape, dtype=np.int16)
+# Mark the v1 areas
+visf_new_array[np.isin(visf_ants.numpy(), v1_labels)] = 1
+# Mark the v2 areas
+visf_new_array[np.isin(visf_ants.numpy(), v2_labels)] = 2
+# Update the ants object with other areas excluded
+visf_visual_ants = visf_ants.new_image_like(visf_new_array)
 
-# Compute the ROI tSNR for V1/V2
-ndimage.mean(tSNR_3d, visf_subject_ants.numpy(), index = [1, 2])
-# Compute the ROI tSNR for scene areas
-ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = [1, 2, 3])
-# All are below 30, plan is to compute all 3 metrics for all subjects
-# If all fail tSNR gate: shift the plan to normalize them on one scale
-# use the weakest link logic like the last post
+# Define the candidate selection logic
+# 1. Exluded if ROI tSNR < 30
+# 2. Remaining ranked by minimum mean FD
+# 3. Ties broken by DVARS
 
-# Mean FD Computation - Only using evenly spaced 50 frames
-frame_fd_running_sum = 0
-for frame in np.linspace(1, len(bold1_ants_list) - 1, 50, dtype = int):
-    # Register each frame against previous frame
-    frame_reg = registration(fixed = bold1_ants_list[frame-1], moving = bold1_ants_list[frame],
-                                type_of_transform = 'Rigid')
-    # Load the transformed frame and extract the parameters
-    tx = read_transform(frame_reg['fwdtransforms'][0]).parameters
-    # Compute the eular angles from the rotation of the image
-    euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
-    # Convert to mm using 50 mm general head size
-    displacement = euler_angles * 50
-    # Get the translations from the transformed parameters
-    translations = tx[9:]
-    # Compute the FD for this frame
-    frame_fd = np.sum(np.abs(np.append(displacement, translations)))
-    # Add the each frame_fd to a running sum
-    frame_fd_running_sum += frame_fd
-# Compute the mean FD
-mean_fd = frame_fd_running_sum/50
+# Named ROI labels for each atlas, matches the integer labels assigned above
+visf_roi_names = {1: 'v1', 2: 'v2'}
+scene_roi_names = {1: 'ppa', 2: 'rsc', 3: 'opa'}
 
-# DVARS computation
-# Compute the voxel differences between adjacent frame
-frame_diff = np.diff(bold1_4d.numpy().astype(np.float64), axis = 3)
-# Compute the RMS across all voxels
-rms = np.sqrt(np.mean(frame_diff, axis = (0,1,2))**2)
-# Compute the median RMS across the whole run
-median_dvars = np.median(rms)
+# Get the MNI152NLin6Asym from TemplateFlow
+t1_path = tflow.get('MNI152NLin6Asym', resolution=1, suffix='T1w', desc = None)
+# Convert to ANTs format
+mni_template_ants = image_read(str(t1_path))
+
+bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
+subject_rows = []
+# Loop over each subject
+for sub in subject_list:
+    path_to_sub_zip = raw_data_path / f"MRI_Scanning_sub{sub}.zip"
+    run_metrics = []
+    # Loop over each bold run for this subject
+    for bold_run in bold_runs:
+        # Collate all frames from this bold run
+        zip_file = zipfile.ZipFile(path_to_sub_zip)
+        run_files = sorted(name for name in zip_file.namelist() if bold_run in name and not name.endswith('/'))
+        running_sum = np.zeros((112, 112, 62))
+        bold_ants_list = []
+        # Get all frames in ANTs format as a list
+        for file in run_files:
+            # Read DICOM file
+            dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
+            # Wrap the data to read directly from the zipped format
+            dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
+            # Extract the 3D data for each frame
+            dcm_3d = dcm_wrap.get_data()
+            # Add to the running sum to get the mean value for normalization
+            running_sum += dcm_3d
+            # Convert to ANTs format
+            ants_format = from_numpy(dcm_3d, spacing=(2, 2, 2.3))
+            # Append to list
+            bold_ants_list.append(ants_format)
+        # Close the zip file
+        zip_file.close()
+
+        # Compute the mean frame and convert to ANTs format
+        mean_frame_ants = from_numpy(running_sum/len(run_files), spacing = (2, 2, 2.3))
+        # Register the mean frame to MNI152NLin6Asym
+        ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
+
+        # Transform both maps onto subject MNI space
+        visf_subject_ants = apply_transforms(fixed = mean_frame_ants,
+                                                moving = visf_visual_ants,
+                                                transformlist = ants_res['fwdtransforms'],
+                                                whichtoinvert = [True],
+                                                interpolator='nearestNeighbor')
+        scene_subject_ants = apply_transforms(fixed = mean_frame_ants,
+                                                moving = scene_ants,
+                                                transformlist = ants_res['fwdtransforms'],
+                                                whichtoinvert = [True],
+                                                interpolator='nearestNeighbor')
+
+        # Compute the motion correction metrics on the BOLD run
+        bold_4d = list_to_ndimage(make_image((*bold_ants_list[0].shape, len(bold_ants_list)), pixeltype='unsigned int',
+                                                origin = (*bold_ants_list[0].origin, 0)),
+                                    bold_ants_list)
+        # Compute mean and std across time axis
+        with np.errstate(invalid = 'ignore'):
+            tSNR_3d = bold_4d.numpy().mean(axis = 3) / bold_4d.numpy().std(axis = 3)
+
+        # Compute the ROI tSNR for V1/V2 and scene areas, keyed by ROI name
+        visf_tsnr = ndimage.mean(tSNR_3d, visf_subject_ants.numpy(), index = list(visf_roi_names.keys()))
+        scene_tsnr = ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = list(scene_roi_names.keys()))
+        run_tsnr = dict(zip(visf_roi_names.values(), visf_tsnr)) | dict(zip(scene_roi_names.values(), scene_tsnr))
+
+        # Mean FD Computation - Only using evenly spaced 50 frames
+        frame_fd_running_sum = 0
+        for frame in np.linspace(1, len(bold_ants_list) - 1, 50, dtype = int):
+            # Register each frame against previous frame
+            frame_reg = registration(fixed = bold_ants_list[frame-1], moving = bold_ants_list[frame],
+                                        type_of_transform = 'Rigid')
+            # Load the transformed frame and extract the parameters
+            tx = read_transform(frame_reg['fwdtransforms'][0]).parameters
+            # Compute the eular angles from the rotation of the image
+            euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
+            # Convert to mm using 50 mm general head size
+            displacement = euler_angles * 50
+            # Get the translations from the transformed parameters
+            translations = tx[9:]
+            # Compute the FD for this frame
+            frame_fd = np.sum(np.abs(np.append(displacement, translations)))
+            # Add the each frame_fd to a running sum
+            frame_fd_running_sum += frame_fd
+        # Compute the mean FD
+        run_mean_fd = frame_fd_running_sum/50
+
+        # DVARS computation
+        bold_run_signal = bold_4d.numpy().astype(np.float64)
+        # Compute the voxel differences between adjacent frames
+        frame_diff = np.diff(bold_run_signal, axis = 3)
+        # Compute the percentage change against the mean signal
+        percent_frame_diff = frame_diff / bold_run_signal.mean() * 100
+        # Compute the RMS across all voxels
+        rms = np.sqrt(np.mean(percent_frame_diff**2, axis = (0,1,2)))
+        # Compute the median RMS across the whole run
+        run_median_dvars = np.median(rms)
+
+        # Collect this run's metrics
+        run_metrics.append(run_tsnr | {'mean_fd': run_mean_fd, 'median_dvars': run_median_dvars})
+
+    # Average each metric across this subject's 4 runs
+    subject_row = pd.DataFrame(run_metrics).mean().to_dict()
+    subject_row['participant_id'] = sub
+    subject_rows.append(subject_row)
+
+# Collate results into one DataFrame, one row per subject
+candidate_metrics = pd.DataFrame(subject_rows)
+
+# Save the candidate metrics so this pipeline never needs to be rerun
+candidate_selection_path = data_path / "derivatives" / "candidate_selection"
+candidate_selection_path.mkdir(parents=True, exist_ok=True)
+candidate_metrics.to_csv(candidate_selection_path / "candidate_metrics.tsv", sep='\t', index=False)
