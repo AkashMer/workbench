@@ -8,10 +8,12 @@ import nibabel as nib
 import pydicom
 from nibabel.nicom import dicomwrappers
 from ants import from_numpy, from_nibabel_nifti, image_read, registration, apply_transforms, list_to_ndimage, make_image
-from ants import read_transform
+from ants import read_transform, to_nibabel_nifti
 from templateflow import api as tflow
 from scipy import ndimage
 from scipy.spatial.transform import Rotation
+from scipy.stats import mode
+from nilearn.masking import compute_epi_mask
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -146,42 +148,6 @@ map_rdm = (maps[:, None] != maps[None, :]).astype(int)
 # Close the behavior zip file connection
 behavior_zip_file.close()
 
-# Extract the fMRI data and load
-# 1. Extract under subject_23 folder
-# extract_path = data_path / "extracted" / "subject_23"
-# zip_file.extractall(extract_path)
-
-# DCM to Nifti conversion done in terminal
-# dcm2niix -z y -f "sub23_bold_run1" 
-# -o data/scene-areas-hierarchy-rsa/nifti/sub23 
-# data\scene-areas-hierarchy-rsa\extracted\subject_23\MRI_Scanning_sub23\bold_run1
-
-# Load the nifti bold_run1 file
-# nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
-# sub23_bold_run1 = nib.load(nifti_path)
-# # Check headers
-# print(sub23_bold_run1.header)
-# 4d image: 112 x 112 x 62 voxels x 495 volumes
-
-# All dcm files converted to nifti in terminal
-# Rearranged in BIDS format under the data/scene-areas-hierarchy-rsa/bids
-
-# fMRIPrep setup
-# docker run --rm \
-#   -v -path to bids-:/data:ro \
-#   -v -path to output-:/out \
-#   -v -path to free surfer license-:/opt/freesurfer/license.txt:ro \
-#   nipreps/fmriprep:25.2.0 \
-#   /data /out participant \
-#   --participant-label 23 \
-#   --fs-license-file /opt/freesurfer/license.txt \
-#   --fs-no-reconall \
-#   --output-spaces MNI152NLin2009cAsym \
-#   --nprocs 8 \
-#   --omp-nthreads 4 \
-#   --mem-mb 10000
-# fMRIPrep test successful
-
 # --- Scene Area Parcels ----
 # Explore the structure of scene area ROI masks
 scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
@@ -285,113 +251,167 @@ t1_path = tflow.get('MNI152NLin6Asym', resolution=1, suffix='T1w', desc = None)
 # Convert to ANTs format
 mni_template_ants = image_read(str(t1_path))
 
-bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
-subject_rows = []
-# Loop over each subject
-for sub in subject_list:
-    path_to_sub_zip = raw_data_path / f"MRI_Scanning_sub{sub}.zip"
-    run_metrics = []
-    # Loop over each bold run for this subject
-    for bold_run in bold_runs:
-        # Collate all frames from this bold run
-        zip_file = zipfile.ZipFile(path_to_sub_zip)
-        run_files = sorted(name for name in zip_file.namelist() if bold_run in name and not name.endswith('/'))
-        running_sum = np.zeros((112, 112, 62))
-        bold_ants_list = []
-        # Get all frames in ANTs format as a list
-        for file in run_files:
-            # Read DICOM file
-            dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
-            # Wrap the data to read directly from the zipped format
-            dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
-            # Extract the 3D data for each frame
-            dcm_3d = dcm_wrap.get_data()
-            # Add to the running sum to get the mean value for normalization
-            running_sum += dcm_3d
-            # Convert to ANTs format
-            ants_format = from_numpy(dcm_3d, spacing=(2, 2, 2.3))
-            # Append to list
-            bold_ants_list.append(ants_format)
-        # Close the zip file
-        zip_file.close()
+# subject_rows = []
+# # Loop over each subject
+# for sub in subject_list:
+#     path_to_sub_zip = raw_data_path / f"MRI_Scanning_sub{sub}.zip"
+#     run_metrics = []
+#     # Loop over each bold run for this subject
+#     for bold_run in bold_runs:
+#         # Collate all frames from this bold run
+#         zip_file = zipfile.ZipFile(path_to_sub_zip)
+#         run_files = sorted(name for name in zip_file.namelist() if bold_run in name and not name.endswith('/'))
+#         running_sum = np.zeros((112, 112, 62))
+#         bold_ants_list = []
+#         # Get all frames in ANTs format as a list
+#         for file in run_files:
+#             # Read DICOM file
+#             dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
+#             # Wrap the data to read directly from the zipped format
+#             dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
+#             # Extract the 3D data for each frame
+#             dcm_3d = dcm_wrap.get_data()
+#             # Add to the running sum to get the mean value for normalization
+#             running_sum += dcm_3d
+#             # Convert to ANTs format
+#             ants_format = from_numpy(dcm_3d, spacing=(2, 2, 2.3))
+#             # Append to list
+#             bold_ants_list.append(ants_format)
+#         # Close the zip file
+#         zip_file.close()
 
-        # Compute the mean frame and convert to ANTs format
-        mean_frame_ants = from_numpy(running_sum/len(run_files), spacing = (2, 2, 2.3))
-        # Register the mean frame to MNI152NLin6Asym
-        ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
+#         # Compute the mean frame and convert to ANTs format
+#         mean_frame_ants = from_numpy(running_sum/len(run_files), spacing = (2, 2, 2.3))
+#         # Register the mean frame to MNI152NLin6Asym
+#         ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
 
-        # Transform both maps onto subject MNI space
-        visf_subject_ants = apply_transforms(fixed = mean_frame_ants,
-                                                moving = visf_visual_ants,
-                                                transformlist = ants_res['fwdtransforms'],
-                                                whichtoinvert = [True],
-                                                interpolator='nearestNeighbor')
-        scene_subject_ants = apply_transforms(fixed = mean_frame_ants,
-                                                moving = scene_ants,
-                                                transformlist = ants_res['fwdtransforms'],
-                                                whichtoinvert = [True],
-                                                interpolator='nearestNeighbor')
+#         # Transform both maps onto subject MNI space
+#         visf_subject_ants = apply_transforms(fixed = mean_frame_ants,
+#                                                 moving = visf_visual_ants,
+#                                                 transformlist = ants_res['fwdtransforms'],
+#                                                 whichtoinvert = [True],
+#                                                 interpolator='nearestNeighbor')
+#         scene_subject_ants = apply_transforms(fixed = mean_frame_ants,
+#                                                 moving = scene_ants,
+#                                                 transformlist = ants_res['fwdtransforms'],
+#                                                 whichtoinvert = [True],
+#                                                 interpolator='nearestNeighbor')
 
-        # Compute the motion correction metrics on the BOLD run
-        bold_4d = list_to_ndimage(make_image((*bold_ants_list[0].shape, len(bold_ants_list)), pixeltype='unsigned int',
-                                                origin = (*bold_ants_list[0].origin, 0)),
-                                    bold_ants_list)
-        # Compute mean and std across time axis
-        with np.errstate(invalid = 'ignore'):
-            tSNR_3d = bold_4d.numpy().mean(axis = 3) / bold_4d.numpy().std(axis = 3)
+#         # Compute the motion correction metrics on the BOLD run
+#         bold_4d = list_to_ndimage(make_image((*bold_ants_list[0].shape, len(bold_ants_list)), pixeltype='unsigned int',
+#                                                 origin = (*bold_ants_list[0].origin, 0)),
+#                                     bold_ants_list)
+#         # Compute mean and std across time axis
+#         with np.errstate(invalid = 'ignore'):
+#             tSNR_3d = bold_4d.numpy().mean(axis = 3) / bold_4d.numpy().std(axis = 3)
 
-        # Compute the ROI tSNR for V1/V2 and scene areas, keyed by ROI name
-        visf_tsnr = ndimage.mean(tSNR_3d, visf_subject_ants.numpy(), index = list(visf_roi_names.keys()))
-        scene_tsnr = ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = list(scene_roi_names.keys()))
-        run_tsnr = dict(zip(visf_roi_names.values(), visf_tsnr)) | dict(zip(scene_roi_names.values(), scene_tsnr))
+#         # Compute the ROI tSNR for V1/V2 and scene areas, keyed by ROI name
+#         visf_tsnr = ndimage.mean(tSNR_3d, visf_subject_ants.numpy(), index = list(visf_roi_names.keys()))
+#         scene_tsnr = ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = list(scene_roi_names.keys()))
+#         run_tsnr = dict(zip(visf_roi_names.values(), visf_tsnr)) | dict(zip(scene_roi_names.values(), scene_tsnr))
 
-        # Mean FD Computation - Only using evenly spaced 50 frames
-        frame_fd_running_sum = 0
-        for frame in np.linspace(1, len(bold_ants_list) - 1, 50, dtype = int):
-            # Register each frame against previous frame
-            frame_reg = registration(fixed = bold_ants_list[frame-1], moving = bold_ants_list[frame],
-                                        type_of_transform = 'Rigid')
-            # Load the transformed frame and extract the parameters
-            tx = read_transform(frame_reg['fwdtransforms'][0]).parameters
-            # Compute the eular angles from the rotation of the image
-            euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
-            # Convert to mm using 50 mm general head size
-            displacement = euler_angles * 50
-            # Get the translations from the transformed parameters
-            translations = tx[9:]
-            # Compute the FD for this frame
-            frame_fd = np.sum(np.abs(np.append(displacement, translations)))
-            # Add the each frame_fd to a running sum
-            frame_fd_running_sum += frame_fd
-        # Compute the mean FD
-        run_mean_fd = frame_fd_running_sum/50
+#         # Mean FD Computation - Only using evenly spaced 50 frames
+#         frame_fd_running_sum = 0
+#         for frame in np.linspace(1, len(bold_ants_list) - 1, 50, dtype = int):
+#             # Register each frame against previous frame
+#             frame_reg = registration(fixed = bold_ants_list[frame-1], moving = bold_ants_list[frame],
+#                                         type_of_transform = 'Rigid')
+#             # Load the transformed frame and extract the parameters
+#             tx = read_transform(frame_reg['fwdtransforms'][0]).parameters
+#             # Compute the eular angles from the rotation of the image
+#             euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
+#             # Convert to mm using 50 mm general head size
+#             displacement = euler_angles * 50
+#             # Get the translations from the transformed parameters
+#             translations = tx[9:]
+#             # Compute the FD for this frame
+#             frame_fd = np.sum(np.abs(np.append(displacement, translations)))
+#             # Add the each frame_fd to a running sum
+#             frame_fd_running_sum += frame_fd
+#         # Compute the mean FD
+#         run_mean_fd = frame_fd_running_sum/50
 
-        # DVARS computation
-        bold_run_signal = bold_4d.numpy().astype(np.float64)
-        # Compute the voxel differences between adjacent frames
-        frame_diff = np.diff(bold_run_signal, axis = 3)
-        # Compute the percentage change against the mean signal
-        percent_frame_diff = frame_diff / bold_run_signal.mean() * 100
-        # Compute the RMS across all voxels
-        rms = np.sqrt(np.mean(percent_frame_diff**2, axis = (0,1,2)))
-        # Compute the median RMS across the whole run
-        run_median_dvars = np.median(rms)
+#         # DVARS computation
+#         brain_mask = compute_epi_mask(to_nibabel_nifti(mean_frame_ants)).get_fdata().astype(bool)
+#         bold_run_signal = bold_4d.numpy().astype(np.float64)[brain_mask]
+#         # Rescale so the whole-brain modal intensity becomes 1000, per Power et al. (2012)
+#         brain_mode = mode(bold_run_signal, axis = None).mode
+#         mode1000_signal = bold_run_signal / brain_mode * 1000
+#         # Compute the voxel differences between adjacent frames
+#         frame_diff = np.diff(mode1000_signal, axis = -1)
+#         # Compute the RMS across all brain voxels
+#         rms = np.sqrt(np.mean(frame_diff**2, axis = 0))
+#         # Compute the median RMS across the whole run
+#         run_median_dvars = np.median(rms)
 
-        # Collect this run's metrics
-        run_metrics.append(run_tsnr | {'mean_fd': run_mean_fd, 'median_dvars': run_median_dvars})
+#         # Collect this run's metrics
+#         run_metrics.append(run_tsnr | {'mean_fd': run_mean_fd, 'median_dvars': run_median_dvars})
 
-    # Average each metric across this subject's 4 runs
-    subject_row = pd.DataFrame(run_metrics).mean().to_dict()
-    subject_row['participant_id'] = sub
-    subject_rows.append(subject_row)
-# The loop should take around 64 minutes
-# Collate results into one DataFrame, one row per subject
-candidate_metrics = pd.DataFrame(subject_rows)
-# Rearrange the columns so participant_id is the first column
-participant_ids = candidate_metrics.pop('participant_id')
-candidate_metrics.insert(0, 'participant_id', participant_ids)
+#     # Average each metric across this subject's 4 runs
+#     subject_row = pd.DataFrame(run_metrics).mean().to_dict()
+#     subject_row['participant_id'] = sub
+#     subject_rows.append(subject_row)
+# # The loop should take around 64 minutes
+# # Collate results into one DataFrame, one row per subject
+# candidate_metrics = pd.DataFrame(subject_rows)
+# # Rearrange the columns so participant_id is the first column
+# participant_ids = candidate_metrics.pop('participant_id')
+# candidate_metrics.insert(0, 'participant_id', participant_ids)
 
-# Save the candidate metrics
+# # Save the candidate metrics
 candidate_selection_path = data_path / "derivatives" / "candidate_selection"
-candidate_selection_path.mkdir(parents=True, exist_ok=True)
-candidate_metrics.to_csv(candidate_selection_path / "candidate_metrics.tsv", sep='\t', index=False)
+# candidate_selection_path.mkdir(parents=True, exist_ok=True)
+# candidate_metrics.sort_values('participant_id').to_csv(candidate_selection_path / "candidate_metrics.tsv", sep='\t', index=False)
+
+# Load and explore the candidate metrics
+candidate_metrics = pd.read_table(candidate_selection_path / "candidate_metrics.tsv")
+# Check if any subject has all ROI with tSNR > 30
+candidate_metrics.query('ppa > 30 and rsc > 30 and opa > 30 and v1 > 30 and v2 > 30')
+# None, so switching to using the same logic as Noda post, the weakest-link ranking
+# But now the FD serves as the gate and rest of the metrics are used for weakest-link ranking
+# So the new logic is:
+# 1. Exclude if mean FD > 0.2
+# 2. Remaining ranked by weakest-link tSNR, i.e. the minimum tSNR across all ROIs
+candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
+        .assign(min_tsnr = lambda x: x[['ppa', 'rsc', 'opa', 'v1', 'v2']].min(axis=1))
+        .sort_values(['min_tsnr', 'median_dvars'], ascending=[False, True]))
+# Subject 15 is the clear winner having high tSNR for all ROIs, DVARS sits somwhere in the middle of the pack
+# Next on the list, Subject 12 has lower median DVARS but tSNR is lower for all ROIs
+
+
+
+# Extract the fMRI data and load
+# 1. Extract under subject_23 folder
+# extract_path = data_path / "extracted" / "subject_23"
+# zip_file.extractall(extract_path)
+
+# DCM to Nifti conversion done in terminal
+# dcm2niix -z y -f "sub23_bold_run1" 
+# -o data/scene-areas-hierarchy-rsa/nifti/sub23 
+# data\scene-areas-hierarchy-rsa\extracted\subject_23\MRI_Scanning_sub23\bold_run1
+
+# Load the nifti bold_run1 file
+# nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
+# sub23_bold_run1 = nib.load(nifti_path)
+# # Check headers
+# print(sub23_bold_run1.header)
+# 4d image: 112 x 112 x 62 voxels x 495 volumes
+
+# All dcm files converted to nifti in terminal
+# Rearranged in BIDS format under the data/scene-areas-hierarchy-rsa/bids
+
+# fMRIPrep setup
+# docker run --rm \
+#   -v -path to bids-:/data:ro \
+#   -v -path to output-:/out \
+#   -v -path to free surfer license-:/opt/freesurfer/license.txt:ro \
+#   nipreps/fmriprep:25.2.0 \
+#   /data /out participant \
+#   --participant-label 23 \
+#   --fs-license-file /opt/freesurfer/license.txt \
+#   --fs-no-reconall \
+#   --output-spaces MNI152NLin2009cAsym \
+#   --nprocs 8 \
+#   --omp-nthreads 4 \
+#   --mem-mb 10000
+# fMRIPrep test successful
