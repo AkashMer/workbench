@@ -384,11 +384,14 @@ for sub in subject_list:
     subject_row = pd.DataFrame(run_metrics).mean().to_dict()
     subject_row['participant_id'] = sub
     subject_rows.append(subject_row)
-
+# The loop should take around 64 minutes
 # Collate results into one DataFrame, one row per subject
 candidate_metrics = pd.DataFrame(subject_rows)
+# Rearrange the columns so participant_id is the first column
+participant_ids = candidate_metrics.pop('participant_id')
+candidate_metrics.insert(0, 'participant_id', participant_ids)
 
-# Save the candidate metrics so this pipeline never needs to be rerun
+# Save the candidate metrics
 candidate_selection_path = data_path / "derivatives" / "candidate_selection"
 candidate_selection_path.mkdir(parents=True, exist_ok=True)
 candidate_metrics.to_csv(candidate_selection_path / "candidate_metrics.tsv", sep='\t', index=False)
