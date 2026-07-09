@@ -378,40 +378,38 @@ candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
 # Subject 15 is the clear winner having high tSNR for all ROIs, DVARS sits somwhere in the middle of the pack
 # Next on the list, Subject 12 has lower median DVARS but tSNR is lower for all ROIs
 
+# Extract the fMRI data and load Subject 15 data
+path_to_zip = raw_data_path / "MRI_Scanning_sub15.zip"
+zip_file = zipfile.ZipFile(path_to_zip)
+extract_path = data_path / "extracted" / "subject_15"
+zip_file.extractall(extract_path)
+zip_file.close()
 
+# DCM to Nifti conversion done for all bold runs in a wsl2 terminal using the command below
+# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-15/func
+# for run in 1 2 3 4; do
+#   dcm2niix -z y -f "sub-15_task-sm_run-${run}_bold" \
+#     -o data/scene-areas-hierarchy-rsa/bids/sub-15/func \
+#     data/scene-areas-hierarchy-rsa/extracted/subject_15/MRI_Scanning_sub15/bold_run${run}
+# done
 
-# Extract the fMRI data and load
-# 1. Extract under subject_23 folder
-# extract_path = data_path / "extracted" / "subject_23"
-# zip_file.extractall(extract_path)
+# Do the same for the T1w image
+# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-15/anat
+# dcm2niix -z y -f "sub-15_T1w" \
+#   -o data/scene-areas-hierarchy-rsa/bids/sub-15/anat \
+#   data/scene-areas-hierarchy-rsa/extracted/subject_15/MRI_Scanning_sub15/t1
 
-# DCM to Nifti conversion done in terminal
-# dcm2niix -z y -f "sub23_bold_run1" 
-# -o data/scene-areas-hierarchy-rsa/nifti/sub23 
-# data\scene-areas-hierarchy-rsa\extracted\subject_23\MRI_Scanning_sub23\bold_run1
-
-# Load the nifti bold_run1 file
-# nifti_path = data_path / 'nifti' / 'sub23' / 'sub23_bold_run1.nii.gz'
-# sub23_bold_run1 = nib.load(nifti_path)
-# # Check headers
-# print(sub23_bold_run1.header)
-# 4d image: 112 x 112 x 62 voxels x 495 volumes
-
-# All dcm files converted to nifti in terminal
-# Rearranged in BIDS format under the data/scene-areas-hierarchy-rsa/bids
-
-# fMRIPrep setup
+# Run fMRIPrep on the extracted and converted BIDS data for Subject 15 to get the preprocessed data
 # docker run --rm \
-#   -v -path to bids-:/data:ro \
-#   -v -path to output-:/out \
-#   -v -path to free surfer license-:/opt/freesurfer/license.txt:ro \
+#   -v "-absolute path to bids-":/data:ro \
+#   -v "-absolute path to output-":/out \
+#   -v "-absolute path to free surfer license-":/opt/freesurfer/license.txt:ro \
 #   nipreps/fmriprep:25.2.0 \
 #   /data /out participant \
-#   --participant-label 23 \
+#   --participant-label 15 \
 #   --fs-license-file /opt/freesurfer/license.txt \
-#   --fs-no-reconall \
 #   --output-spaces MNI152NLin2009cAsym \
 #   --nprocs 8 \
 #   --omp-nthreads 4 \
-#   --mem-mb 10000
-# fMRIPrep test successful
+#   --mem-mb 16000
+# Ran for 2.5 hours with the above command
