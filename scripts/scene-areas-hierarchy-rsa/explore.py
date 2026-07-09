@@ -1,5 +1,4 @@
 # Import necessary libraries
-from nilearn.glm.first_level import FirstLevelModel
 from pathlib import Path
 import zipfile
 import io
@@ -16,6 +15,10 @@ from scipy.spatial.transform import Rotation
 from scipy.stats import mode
 from nilearn.masking import compute_epi_mask, intersect_masks
 from nilearn.glm import first_level
+from nilearn.image import concat_imgs, resample_to_img
+import matplotlib.pyplot as plt
+import seaborn as sns
+import rsatoolbox
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -29,64 +32,64 @@ repo_root = Path.cwd()
 data_path = repo_root / "data" / "scene-areas-hierarchy-rsa"
 raw_data_path = data_path / "raw_fmri"
 
-# 2. Initialize the subject 23 zip file
-path_to_zip = raw_data_path / "MRI_Scanning_sub23.zip"
-zip_file = zipfile.ZipFile(path_to_zip)
+# # 2. Initialize the subject 23 zip file
+# path_to_zip = raw_data_path / "MRI_Scanning_sub23.zip"
+# zip_file = zipfile.ZipFile(path_to_zip)
 
-# 3. Check the structure of the zip file
-zip_file.namelist()[:10]
-# 4 runs, t1 anatomical images, each file as a stack of slices
+# # 3. Check the structure of the zip file
+# zip_file.namelist()[:10]
+# # 4 runs, t1 anatomical images, each file as a stack of slices
 
-# What is the structure of the folders inside the zip file
-file_list = zip_file.namelist()
-[name for name in file_list if name.endswith('/')]
-# Organized by bold runs and t1
+# # What is the structure of the folders inside the zip file
+# file_list = zip_file.namelist()
+# [name for name in file_list if name.endswith('/')]
+# # Organized by bold runs and t1
 
-# Get the number of files under each run to compute time for each run
-bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
-for bold_run in bold_runs:
-    print(bold_run, ': ',
-    sum(1 for name in file_list if bold_run in name and not name.endswith('/'))*2, 's') # 2 sec for TR
-# ~16 mins for each run
-# How is each run divided for the 4 period: walking, facing, targeting, choice
-# Close the zip file connection
-zip_file.close()
+# # Get the number of files under each run to compute time for each run
+# bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
+# for bold_run in bold_runs:
+#     print(bold_run, ': ',
+#     sum(1 for name in file_list if bold_run in name and not name.endswith('/'))*2, 's') # 2 sec for TR
+# # ~16 mins for each run
+# # How is each run divided for the 4 period: walking, facing, targeting, choice
+# # Close the zip file connection
+# zip_file.close()
 
 # Load the behavior zip file
 path_to_behavior_zip = raw_data_path / "fMRI_behavior.zip"
 behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
-behavior_zip_file.namelist()
-# Files are under fMRI_behavior/sub_xx_formal_rawdata.txt and sub_xx_formal_Time_record_t.txt
+# behavior_zip_file.namelist()
+# # Files are under fMRI_behavior/sub_xx_formal_rawdata.txt and sub_xx_formal_Time_record_t.txt
 
-# What is the separator used in the text files?
-io.TextIOWrapper(behavior_zip_file.open('fMRI_behavior/sub_23_formal_rawdata.txt')).readline()
-# Tab separator
-io.TextIOWrapper(behavior_zip_file.open('fMRI_behavior/sub_23_formal_Time_record_t.txt')).readline()
-# Same here
+# # What is the separator used in the text files?
+# io.TextIOWrapper(behavior_zip_file.open('fMRI_behavior/sub_23_formal_rawdata.txt')).readline()
+# # Tab separator
+# io.TextIOWrapper(behavior_zip_file.open('fMRI_behavior/sub_23_formal_Time_record_t.txt')).readline()
+# # Same here
 
-# Define the internal path to the trial conditions and timing files
-formal_rawdata_filepath = 'fMRI_behavior/sub_23_formal_rawdata.txt'
-formal_Time_record_filepath = 'fMRI_behavior/sub_23_formal_Time_record_t.txt'
-# Load the tab separated data
-trial_conditions = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath), header=None)
-timing_onsets = pd.read_table(behavior_zip_file.open(formal_Time_record_filepath), header=None)
-# Check the shape and head of each tables
-trial_conditions.shape
-trial_conditions.head()
-# Columns of interest: 1 map, 2 walking direction, 8 allocentric direction and 9 egocentric direction
-# What are the unique number of maps used?
-trial_conditions[1].value_counts() # 3 maps - 1, 3, 2
-# What are the unique number of walking directions?
-trial_conditions[2].value_counts() # 4 directions
-# Check out the trial timings and period onset timings
-timing_onsets.shape
-timing_onsets.head()
-# How many trials per run?
-timing_onsets[12].value_counts()
-# 40 trials for each of the bold 1-4 runs
-# How are the periods marked?
-np.diff(timing_onsets.iloc[0])
-# Columns 4 & 6 gives onset of walking and facing periods, the ones I am interested in
+# # Define the internal path to the trial conditions and timing files
+# formal_rawdata_filepath = 'fMRI_behavior/sub_23_formal_rawdata.txt'
+# formal_Time_record_filepath = 'fMRI_behavior/sub_23_formal_Time_record_t.txt'
+# # Load the tab separated data
+# trial_conditions = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath), header=None)
+# timing_onsets = pd.read_table(behavior_zip_file.open(formal_Time_record_filepath), header=None)
+# # Check the shape and head of each tables
+# trial_conditions.shape
+# trial_conditions.head()
+# # Columns of interest: 1 map, 2 walking direction, 8 allocentric direction and 9 egocentric direction
+# # What are the unique number of maps used?
+# trial_conditions[1].value_counts() # 3 maps - 1, 3, 2
+# # What are the unique number of walking directions?
+# trial_conditions[2].value_counts() # 4 directions
+# # Check out the trial timings and period onset timings
+# timing_onsets.shape
+# timing_onsets.head()
+# # How many trials per run?
+# timing_onsets[12].value_counts()
+# # 40 trials for each of the bold 1-4 runs
+# # How are the periods marked?
+# np.diff(timing_onsets.iloc[0])
+# # Columns 4 & 6 gives onset of walking and facing periods, the ones I am interested in
 
 # After some reading of the SM task yesterday, I think it would be better if I exclude
 # the facing period as well since the SM task starts with the facing period, so it would
@@ -94,18 +97,18 @@ np.diff(timing_onsets.iloc[0])
 # task. Also the data description explicitly states, the walking period were identical for both
 # HND task and SM task
 
-# The video examples of the walking period for either task cover the following combinations
-# map 1 - directions 2, 4
-# map 4 - directions 2, 3, 4
-# map 5 - directions 1, 3, 4
-# I will have to check if the map notations are locally specific to each subject since
-# each subject was only showed 3 maps pseudorandomly selected
-formal_rawdata_filepath8 = 'fMRI_behavior/sub_8_formal_rawdata.txt'
-# Load the tab separated data
-trial_conditions8 = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath), header=None)
-# What are the unique number of maps used?
-trial_conditions8[1].value_counts() # 3 maps 1, 3, 2
-# Same as subject 23
+# # The video examples of the walking period for either task cover the following combinations
+# # map 1 - directions 2, 4
+# # map 4 - directions 2, 3, 4
+# # map 5 - directions 1, 3, 4
+# # I will have to check if the map notations are locally specific to each subject since
+# # each subject was only showed 3 maps pseudorandomly selected
+# formal_rawdata_filepath8 = 'fMRI_behavior/sub_8_formal_rawdata.txt'
+# # Load the tab separated data
+# trial_conditions8 = pd.read_table(behavior_zip_file.open(formal_rawdata_filepath), header=None)
+# # What are the unique number of maps used?
+# trial_conditions8[1].value_counts() # 3 maps 1, 3, 2
+# # Same as subject 23
 
 # Confirming for all subjects under fMRI
 # Get all the subject ids for the fMRI data
@@ -130,19 +133,19 @@ behavior_data['map'].value_counts()
 # Categorical grouping of stimuli, first by the 4 walking directions and then by the 3 unique maps
 # is the only way forward
 
-# What is the counts of each grouping for Subject 23?
-behavior_data.query('participant_id == 23')[['walking_direction', 'map']].value_counts()
+# What is the counts of each grouping for Subject 15?
+behavior_data.query('participant_id == 15')[['walking_direction', 'map']].value_counts()
 # 12 trials for most of the combinations, maximum of 20 trials in 2,1 combination
 
 # Next Step: Build Stimulus Categorical RDM
-directions = behavior_data.query('participant_id == 23')['walking_direction'].unique()
+directions = behavior_data.query('participant_id == 15')['walking_direction'].unique()
 # Sort them in ascending order
 directions = np.sort(directions)
 # Build the RDM for walking directions
 walking_direction_rdm = (directions[:, None] != directions[None, :]).astype(int)
 
 # Do the same for map
-maps = behavior_data.query('participant_id == 23')['map'].unique()
+maps = behavior_data.query('participant_id == 15')['map'].unique()
 # Sort them in ascending order
 maps = np.sort(maps)
 # Build the RDM for walking directions
@@ -437,7 +440,7 @@ for run in range(1, 5):
 print("Mean FD:", pd.Series([df['framewise_displacement'].mean() for df in confounds_dfs]).mean()) # 0.076
 print("Mean of per-run median DVARS:", pd.Series([df['dvars'].median() for df in confounds_dfs]).mean()) # 45.80
 # This confirms that the preprocessed data for Subject 15 is of good quality and
-# matches our estimated values from the raw data
+# matches the estimated values from the raw data
 
 # Load the preprocessed bold runs for Subject 15
 preprocessed_bold_path = preprocessed_path / "func"
@@ -462,39 +465,193 @@ trial_onsets = [timing_onsets[timing_onsets[12] == run][4].values for run in ran
 trial_offsets = [timing_onsets[timing_onsets[12] == run][6].values for run in range(1, 5)]
 # These will serve as the end point for the trials for our purposes
 # Since bold activity is expected to be delayed
-# Build the events dataframe for each run
-# trials from different runs under the same contrast
-events_dfs = []
-for run in range(4):
-    events_df = pd.DataFrame({
-        'onset': trial_onsets[run]/1000,  # Convert to seconds
-        'duration': (trial_offsets[run] - trial_onsets[run])/1000,  # Convert to seconds
-        'trial_type': [f'run{run + 1}_walking_{i}' for i in range(1, len(trial_onsets[run]) + 1)]
-    })
-    events_dfs.append(events_df)
-
-# Build GLM design matrices for each run using the events dataframes
-design_matrics = []
-for run in range(4):
-    design_matrix = first_level.make_first_level_design_matrix(
-        frame_times = run_frame_times[run],
-        events = events_dfs[run],
-        add_regs = confounds_dfs[run][motion_columns],
-        add_reg_names = motion_columns
-    )
-    design_matrics.append(design_matrix)
 
 # Compute a combined brain mask across all 4 runs
 subject_mask_paths = [preprocessed_path / "func" / f"sub-15_task-sm_run-{run}_space-MNI152NLin2009cAsym_desc-brain_mask.nii.gz"
                        for run in range(1, 5)]
 subject_mask = intersect_masks(subject_mask_paths, threshold=1.0)
-# Define a GLM model
+
+# Compute the number of trials per run
+n_trials_per_run = [len(trial_onsets[run]) for run in range(4)]
+
+# Attach map/walking_direction conditions to each trial
+sub15_conditions = behavior_data.query('participant_id == 15').reset_index(drop=True)
+sub15_conditions['run'] = np.repeat(np.arange(1, 5), n_trials_per_run)
+sub15_conditions['trial_index'] = np.concatenate([np.arange(1, n + 1) for n in n_trials_per_run])
+
+# Condition-level GLM: one regressor per map x direction combo instead of per trial
+sub15_conditions['map_direction'] = (sub15_conditions['map'].astype(str) + '_' +
+                                      sub15_conditions['walking_direction'].astype(str))
+sub15_combos = [sub15_conditions.query('run == @run')['map_direction'].values for run in range(1, 5)]
+
+# Define the events DataFrame with trial_type shared across a condition's trials
+events_dfs = []
+for run in range(4):
+    events_dfs.append(pd.DataFrame({
+        'onset': trial_onsets[run] / 1000,
+        'duration': (trial_offsets[run] - trial_onsets[run]) / 1000,
+        'trial_type': [f'combo_{c}' for c in sub15_combos[run]]
+    }))
+
+# Build the design matrices for each run
+design_matrics = [
+    first_level.make_first_level_design_matrix(
+        frame_times = run_frame_times[run],
+        events = events_dfs[run],
+        add_regs = confounds_dfs[run][motion_columns],
+        add_reg_names=motion_columns
+    ) for run in range(4)
+]
+
+# Build the GLM model
 glm_model = first_level.FirstLevelModel(
-    mask_img = subject_mask
+    mask_img=intersect_masks(subject_mask_paths, threshold=1.0),
+    minimize_memory=False
 )
 
-# Fit the bold runs to the GLM model
+# Fit the model to the preprocessed bold runs and design matrices
 glm_model.fit(
     run_imgs = preprocessed_bold_runs,
     design_matrices = design_matrics
 )
+
+# Define the unique conditions across all runs
+conditions = sorted(sub15_conditions['map_direction'].unique())
+
+# One beta per condition per run
+betas = []
+beta_meta = []
+for run in range(4):
+    run_columns = design_matrics[run].columns
+    for c in conditions:
+        combo_name = f'combo_{c}'
+        # Only compute the contrast if the condition is present in this run's design matrix
+        if combo_name not in run_columns:
+            continue
+        beta_map = glm_model.compute_contrast(
+            [combo_name if r == run else np.zeros(design_matrics[r].shape[1]) for r in range(4)],
+            output_type='effect_size'
+        )
+        betas.append(beta_map)
+        beta_meta.append({'run': run + 1, 'map_direction': c})
+betas_4d = concat_imgs(betas)
+# Prepare a DataFrame with the run and map_direction
+beta_meta = pd.DataFrame(beta_meta)
+beta_meta[['map', 'walking_direction']] = beta_meta['map_direction'].str.split('_', expand=True)
+
+# Get the per run residuals for crossnobis distance computation
+run_residuals = glm_model.residuals
+
+# ROI masking
+# Get the MNI152NLin2009cAsym template to serve as the registration target
+t1_2009_path = tflow.get('MNI152NLin2009cAsym', resolution=1, suffix='T1w', desc=None)
+mni_2009_template_ants = image_read(str(t1_2009_path))
+
+# Register MNI152NLin6Asym(atlas) onto MNI152NLin2009cAsym(data)
+mni_reg = registration(fixed=mni_2009_template_ants, moving=mni_template_ants, type_of_transform='SyN')
+
+# Warp both ROI atlases into MNI152NLin2009cAsym space
+scene_2009_ants = apply_transforms(fixed=mni_2009_template_ants, moving=scene_ants,
+                                    transformlist=mni_reg['fwdtransforms'],
+                                    interpolator='nearestNeighbor')
+visf_2009_ants = apply_transforms(fixed=mni_2009_template_ants, moving=visf_visual_ants,
+                                   transformlist=mni_reg['fwdtransforms'],
+                                   interpolator='nearestNeighbor')
+
+# Convert back to nibabel/numpy so we can index the trial betas by ROI
+scene_2009_data = to_nibabel_nifti(scene_2009_ants).get_fdata()
+visf_2009_data = to_nibabel_nifti(visf_2009_ants).get_fdata()
+
+# Resample the warped atlases onto subject 15's grid before indexing
+scene_subject_img = resample_to_img(to_nibabel_nifti(scene_2009_ants), subject_mask, interpolation='nearest')
+visf_subject_img = resample_to_img(to_nibabel_nifti(visf_2009_ants), subject_mask, interpolation='nearest')
+scene_subject_data = scene_subject_img.get_fdata()
+visf_subject_data = visf_subject_img.get_fdata()
+
+# Ensure none of the ROIs are outside the brain mask
+brain_mask_data = subject_mask.get_fdata().astype(bool)
+scene_subject_data = np.where(brain_mask_data, scene_subject_data, 0)
+visf_subject_data = np.where(brain_mask_data, visf_subject_data, 0)
+
+# Pull out actual effect sizes per ROI, voxels x (condition x run) observations
+betas_4d_data = betas_4d.get_fdata()
+roi_betas_data = {}
+for label, name in scene_roi_names.items():
+    roi_betas_data[name] = betas_4d_data[scene_subject_data == label]
+for label, name in visf_roi_names.items():
+    roi_betas_data[name] = betas_4d_data[visf_subject_data == label]
+# n_roi_voxels x n (condition, run) observations, per ROI
+
+# ROI-masked residuals per run, needed for the crossnobis noise precision matrix
+roi_residual_data = {}
+for label, name in scene_roi_names.items():
+    roi_residual_data[name] = [res.get_fdata()[scene_subject_data == label] for res in run_residuals]
+for label, name in visf_roi_names.items():
+    roi_residual_data[name] = [res.get_fdata()[visf_subject_data == label] for res in run_residuals]
+# n_roi_voxels x n_timepoints for each run, per ROI
+
+# Neural RSA via rsatoolbox, crossnobis distance
+# Full 12x12 map x direction RSM kept alongside the marginals, needed as-is tomorrow to
+# subset down to whichever combos match the available DNN comparison videos
+combo_rsms = {}
+direction_rsms = {}
+map_rsms = {}
+for name, roi_data in roi_betas_data.items():
+    # Define the dataset for rsatoolbox
+    # run cast to string: rsatoolbox's _build_rdms does np.full_like(vals, np.nan, dtype=vals.dtype)
+    # on every obs_descriptor when averaging, which fails for an int-typed 'run' array
+    # (can't cast NaN into an int dtype) - traced via warnings-as-errors, not a data problem
+    dataset = rsatoolbox.data.Dataset(
+        measurements=roi_data.T,
+        obs_descriptors={'map': beta_meta['map'].values,
+                          'walking_direction': beta_meta['walking_direction'].values,
+                          'map_direction': beta_meta['map_direction'].values,
+                          'run': beta_meta['run'].astype(str).values}
+    )
+    # Compute the noise precision matrix for crossnobis distance
+    noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
+                        for residuals in roi_residual_data[name]]
+    # Compute the crossnobis RDMs for the full map x direction combos, and the marginal RDMs for direction and map
+    combo_rdms = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
+                                                     noise=noise_precision, cv_descriptor='run')
+    combo_rsms[name] = pd.DataFrame(combo_rdms.get_matrices()[0],
+                                     index=combo_rdms.pattern_descriptors['map_direction'],
+                                     columns=combo_rdms.pattern_descriptors['map_direction'])
+    direction_rdms = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='walking_direction',
+                                                         noise=noise_precision, cv_descriptor='run')
+    direction_rsms[name] = pd.DataFrame(direction_rdms.get_matrices()[0],
+                                         index=direction_rdms.pattern_descriptors['walking_direction'],
+                                         columns=direction_rdms.pattern_descriptors['walking_direction'])
+    map_rdms = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map',
+                                                   noise=noise_precision, cv_descriptor='run')
+    map_rsms[name] = pd.DataFrame(map_rdms.get_matrices()[0],
+                                   index=map_rdms.pattern_descriptors['map'],
+                                   columns=map_rdms.pattern_descriptors['map'])
+
+# Display the full 12x12 map x direction ROI RDMs
+# Each ROI gets its own colorbar since crossnobis distance scales genuinely differ across ROIs,
+# a shared scale would misrepresent the smaller-magnitude ones as flat/empty
+roi_names_ordered = list(roi_betas_data.keys())
+fig, axes = plt.subplots(1, len(roi_names_ordered), figsize=(4 * len(roi_names_ordered), 4.5),
+                          constrained_layout=True)
+for col, name in enumerate(roi_names_ordered):
+    sns.heatmap(combo_rsms[name], ax=axes[col], cmap='RdBu_r', cbar=True, square=True)
+    axes[col].set_title(name, fontsize=20)
+    axes[col].set_xticks([])
+    axes[col].set_yticks([])
+plt.show()
+
+# Display the ROI direction and map marginal RDMs
+fig, axes = plt.subplots(2, len(roi_names_ordered), figsize=(4 * len(roi_names_ordered), 9),
+                          constrained_layout=True)
+for col, name in enumerate(roi_names_ordered):
+    sns.heatmap(direction_rsms[name], ax=axes[0, col], cmap='RdBu_r', cbar=True, square=True)
+    axes[0, col].set_title(f'{name} direction', fontsize=20)
+    axes[0, col].set_xticks([])
+    axes[0, col].set_yticks([])
+
+    sns.heatmap(map_rsms[name], ax=axes[1, col], cmap='RdBu_r', cbar=True, square=True)
+    axes[1, col].set_title(f'{name} map', fontsize=20)
+    axes[1, col].set_xticks([])
+    axes[1, col].set_yticks([])
+plt.show()
