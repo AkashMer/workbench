@@ -1,4 +1,5 @@
 # Import necessary libraries
+from nilearn.glm.first_level import FirstLevelModel
 from pathlib import Path
 import zipfile
 import io
@@ -13,7 +14,8 @@ from templateflow import api as tflow
 from scipy import ndimage
 from scipy.spatial.transform import Rotation
 from scipy.stats import mode
-from nilearn.masking import compute_epi_mask
+from nilearn.masking import compute_epi_mask, intersect_masks
+from nilearn.glm import first_level
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -379,11 +381,11 @@ candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
 # Next on the list, Subject 12 has lower median DVARS but tSNR is lower for all ROIs
 
 # Extract the fMRI data and load Subject 15 data
-path_to_zip = raw_data_path / "MRI_Scanning_sub15.zip"
-zip_file = zipfile.ZipFile(path_to_zip)
-extract_path = data_path / "extracted" / "subject_15"
-zip_file.extractall(extract_path)
-zip_file.close()
+# path_to_zip = raw_data_path / "MRI_Scanning_sub15.zip"
+# zip_file = zipfile.ZipFile(path_to_zip)
+# extract_path = data_path / "extracted" / "subject_15"
+# zip_file.extractall(extract_path)
+# zip_file.close()
 
 # DCM to Nifti conversion done for all bold runs in a wsl2 terminal using the command below
 # mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-15/func
@@ -413,3 +415,86 @@ zip_file.close()
 #   --omp-nthreads 4 \
 #   --mem-mb 16000
 # Ran for 2.5 hours with the above command
+
+# Load the preprocessed fMRI data for Subject 15
+preprocessed_path = data_path / "derivatives" / "sub-15"
+# Confirm the FD and DVARS values for the preprocessed data
+# 24 motion parameters: 6 raw + 6 derivatives + 6 squared + 6 squared-derivatives
+motion_bases = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z']
+motion_variants = ['', '_derivative1', '_power2', '_derivative1_power2']
+motion_columns = [base + variant for base in motion_bases for variant in motion_variants]
+# Build the confound regressors DataFrame (24 motion parameters + FD + DVARS) per run
+confounds_dfs = []
+for run in range(1, 5):
+    timeseries_confounds_path = preprocessed_path / "func" / f"sub-15_task-sm_run-{run}_desc-confounds_timeseries.tsv"
+    timeseries_confounds = pd.read_table(timeseries_confounds_path)
+    confounds_df = timeseries_confounds[motion_columns + ['framewise_displacement', 'dvars']]
+    # Fill the NaN values of the first frame with 0
+    confounds_df = confounds_df.fillna(0)
+    # Append to the list of confounds DataFrames
+    confounds_dfs.append(confounds_df)
+# Display the mean mean FD and mean median DVARS values
+print("Mean FD:", pd.Series([df['framewise_displacement'].mean() for df in confounds_dfs]).mean()) # 0.076
+print("Mean of per-run median DVARS:", pd.Series([df['dvars'].median() for df in confounds_dfs]).mean()) # 45.80
+# This confirms that the preprocessed data for Subject 15 is of good quality and
+# matches our estimated values from the raw data
+
+# Load the preprocessed bold runs for Subject 15
+preprocessed_bold_path = preprocessed_path / "func"
+preprocessed_bold_runs = [nib.load(
+                            preprocessed_bold_path / f"sub-15_task-sm_run-{run}_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz") 
+                            for run in range(1, 5)]
+# Compute the frame times for each run
+run_frame_times = [np.arange(preprocessed_bold_runs[run].shape[-1]) * 2 for run in range(4)] # 2 sec TR
+
+# Find the onset times for the walking period for each run
+# Load the behavior zip file
+behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
+# Define the internal path to the trial timing files
+formal_Time_record_filepath = 'fMRI_behavior/sub_15_formal_Time_record_t.txt'
+# Load the tab separated data
+timing_onsets = pd.read_table(behavior_zip_file.open(formal_Time_record_filepath), header=None)
+# Close the behavior zip file connection
+behavior_zip_file.close()
+# Get the onset times for the walking period for each run
+trial_onsets = [timing_onsets[timing_onsets[12] == run][4].values for run in range(1, 5)]
+# Get the onset times for the facing period for each run
+trial_offsets = [timing_onsets[timing_onsets[12] == run][6].values for run in range(1, 5)]
+# These will serve as the end point for the trials for our purposes
+# Since bold activity is expected to be delayed
+# Build the events dataframe for each run
+# trials from different runs under the same contrast
+events_dfs = []
+for run in range(4):
+    events_df = pd.DataFrame({
+        'onset': trial_onsets[run]/1000,  # Convert to seconds
+        'duration': (trial_offsets[run] - trial_onsets[run])/1000,  # Convert to seconds
+        'trial_type': [f'run{run + 1}_walking_{i}' for i in range(1, len(trial_onsets[run]) + 1)]
+    })
+    events_dfs.append(events_df)
+
+# Build GLM design matrices for each run using the events dataframes
+design_matrics = []
+for run in range(4):
+    design_matrix = first_level.make_first_level_design_matrix(
+        frame_times = run_frame_times[run],
+        events = events_dfs[run],
+        add_regs = confounds_dfs[run][motion_columns],
+        add_reg_names = motion_columns
+    )
+    design_matrics.append(design_matrix)
+
+# Compute a combined brain mask across all 4 runs
+subject_mask_paths = [preprocessed_path / "func" / f"sub-15_task-sm_run-{run}_space-MNI152NLin2009cAsym_desc-brain_mask.nii.gz"
+                       for run in range(1, 5)]
+subject_mask = intersect_masks(subject_mask_paths, threshold=1.0)
+# Define a GLM model
+glm_model = first_level.FirstLevelModel(
+    mask_img = subject_mask
+)
+
+# Fit the bold runs to the GLM model
+glm_model.fit(
+    run_imgs = preprocessed_bold_runs,
+    design_matrices = design_matrics
+)
