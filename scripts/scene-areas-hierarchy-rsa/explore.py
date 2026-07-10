@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation
 from scipy.stats import mode
 from nilearn.masking import compute_epi_mask, intersect_masks
 from nilearn.glm import first_level
-from nilearn.image import concat_imgs, resample_to_img
+from nilearn.image import concat_imgs
 import matplotlib.pyplot as plt
 import seaborn as sns
 import rsatoolbox
@@ -543,6 +543,35 @@ beta_meta[['map', 'walking_direction']] = beta_meta['map_direction'].str.split('
 run_residuals = glm_model.residuals
 
 # ROI masking
+# Build a hemisphere-preserving scene atlas for subject 15's analysis, separate from
+# the bilateral scene_map used for candidate selection
+scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
+scene_lr_pairs = {1: 'lPPA', 2: 'rPPA', 3: 'lRSC', 4: 'rRSC', 5: 'lTOS', 6: 'rTOS'}
+scene_lr_map = np.zeros(lPPA_map.shape, dtype=np.int16)
+for label, region in scene_lr_pairs.items():
+    hdr_region = scene_parcels_zip.read(f'scene_parcels/{region}.hdr')
+    img_region = scene_parcels_zip.read(f'scene_parcels/{region}.img')
+    region_file = nib.AnalyzeImage.make_file_map()
+    region_file['header'].fileobj = io.BytesIO(hdr_region)
+    region_file['image'].fileobj = io.BytesIO(img_region)
+    region_map = nib.AnalyzeImage.from_file_map(region_file).get_fdata()
+    scene_lr_map[region_map == 1] = label
+scene_parcels_zip.close()
+scene_lr_nifti = nib.Nifti1Image(scene_lr_map, lPPA_map.affine)
+scene_lr_ants = from_nibabel_nifti(scene_lr_nifti)
+
+# Same for V1/V2: {ld, lv, rd, rv} = {12, 15, 28, 31} for V1, {13, 16, 29, 32} for V2
+visf_lr_array = np.zeros(visf_ants.numpy().shape, dtype=np.int16)
+visf_lr_array[np.isin(visf_ants.numpy(), [12, 15])] = 7
+visf_lr_array[np.isin(visf_ants.numpy(), [28, 31])] = 8
+visf_lr_array[np.isin(visf_ants.numpy(), [13, 16])] = 9
+visf_lr_array[np.isin(visf_ants.numpy(), [29, 32])] = 10
+visf_lr_ants = visf_ants.new_image_like(visf_lr_array)
+
+# Non-colliding label scheme across both atlases, left/right kept separate
+roi_names = {1: 'lppa', 2: 'rppa', 3: 'lrsc', 4: 'rrsc', 5: 'lopa', 6: 'ropa',
+             7: 'lv1', 8: 'rv1', 9: 'lv2', 10: 'rv2'}
+
 # Get the MNI152NLin2009cAsym template to serve as the registration target
 t1_2009_path = tflow.get('MNI152NLin2009cAsym', resolution=1, suffix='T1w', desc=None)
 mni_2009_template_ants = image_read(str(t1_2009_path))
@@ -550,57 +579,65 @@ mni_2009_template_ants = image_read(str(t1_2009_path))
 # Register MNI152NLin6Asym(atlas) onto MNI152NLin2009cAsym(data)
 mni_reg = registration(fixed=mni_2009_template_ants, moving=mni_template_ants, type_of_transform='SyN')
 
-# Warp both ROI atlases into MNI152NLin2009cAsym space
-scene_2009_ants = apply_transforms(fixed=mni_2009_template_ants, moving=scene_ants,
-                                    transformlist=mni_reg['fwdtransforms'],
-                                    interpolator='nearestNeighbor')
-visf_2009_ants = apply_transforms(fixed=mni_2009_template_ants, moving=visf_visual_ants,
-                                   transformlist=mni_reg['fwdtransforms'],
-                                   interpolator='nearestNeighbor')
-
-# Convert back to nibabel/numpy so we can index the trial betas by ROI
-scene_2009_data = to_nibabel_nifti(scene_2009_ants).get_fdata()
-visf_2009_data = to_nibabel_nifti(visf_2009_ants).get_fdata()
-
-# Resample the warped atlases onto subject 15's grid before indexing
-scene_subject_img = resample_to_img(to_nibabel_nifti(scene_2009_ants), subject_mask, interpolation='nearest')
-visf_subject_img = resample_to_img(to_nibabel_nifti(visf_2009_ants), subject_mask, interpolation='nearest')
-scene_subject_data = scene_subject_img.get_fdata()
-visf_subject_data = visf_subject_img.get_fdata()
+# Warp both ROI atlases directly onto subject 15's functional grid in one hop which is in MNI152NLin2009cAsym space
+scene_subject_ants = apply_transforms(fixed=from_nibabel_nifti(subject_mask), moving=scene_lr_ants,
+                                       transformlist=mni_reg['fwdtransforms'],
+                                       interpolator='genericLabel')
+visf_subject_ants = apply_transforms(fixed=from_nibabel_nifti(subject_mask), moving=visf_lr_ants,
+                                      transformlist=mni_reg['fwdtransforms'],
+                                      interpolator='genericLabel')
+scene_subject_data = to_nibabel_nifti(scene_subject_ants).get_fdata()
+visf_subject_data = to_nibabel_nifti(visf_subject_ants).get_fdata()
 
 # Ensure none of the ROIs are outside the brain mask
 brain_mask_data = subject_mask.get_fdata().astype(bool)
 scene_subject_data = np.where(brain_mask_data, scene_subject_data, 0)
 visf_subject_data = np.where(brain_mask_data, visf_subject_data, 0)
 
+# Combine both atlases into one subject-15 ROI array
+subject15_roi_data = np.zeros_like(scene_subject_data, dtype=np.int16)
+for label in range(1, 7):
+    subject15_roi_data[scene_subject_data == label] = label
+for label in range(7, 11):
+    subject15_roi_data[visf_subject_data == label] = label
+
 # Pull out actual effect sizes per ROI, voxels x (condition x run) observations
 betas_4d_data = betas_4d.get_fdata()
 roi_betas_data = {}
-for label, name in scene_roi_names.items():
-    roi_betas_data[name] = betas_4d_data[scene_subject_data == label]
-for label, name in visf_roi_names.items():
-    roi_betas_data[name] = betas_4d_data[visf_subject_data == label]
+for label, name in roi_names.items():
+    roi_betas_data[name] = betas_4d_data[subject15_roi_data == label]
 # n_roi_voxels x n (condition, run) observations, per ROI
+
+# Voxel count per ROI actually going into roi_betas_data
+voxel_counts_pre_gm = [{'roi': name, 'n_voxels': roi_data.shape[0]}
+                       for name, roi_data in roi_betas_data.items()]
+print(pd.DataFrame(voxel_counts_pre_gm))
+#     roi  n_voxels
+# 0  lppa       586
+# 1  rppa       417
+# 2  lrsc       916
+# 3  rrsc      1491
+# 4  lopa       107
+# 5  ropa       225
+# 6   lv1       705
+# 7   rv1       565
+# 8   lv2       446
+# 9   rv2       422
 
 # ROI-masked residuals per run, needed for the crossnobis noise precision matrix
 roi_residual_data = {}
-for label, name in scene_roi_names.items():
-    roi_residual_data[name] = [res.get_fdata()[scene_subject_data == label] for res in run_residuals]
-for label, name in visf_roi_names.items():
-    roi_residual_data[name] = [res.get_fdata()[visf_subject_data == label] for res in run_residuals]
+for label, name in roi_names.items():
+    roi_residual_data[name] = [res.get_fdata()[subject15_roi_data == label] for res in run_residuals]
 # n_roi_voxels x n_timepoints for each run, per ROI
 
 # Neural RSA via rsatoolbox, crossnobis distance
 # Full 12x12 map x direction RSM kept alongside the marginals, needed as-is tomorrow to
 # subset down to whichever combos match the available DNN comparison videos
-combo_rsms = {}
-direction_rsms = {}
-map_rsms = {}
+condition_rdms = {}
+direction_rdms = {}
+map_rdms = {}
 for name, roi_data in roi_betas_data.items():
     # Define the dataset for rsatoolbox
-    # run cast to string: rsatoolbox's _build_rdms does np.full_like(vals, np.nan, dtype=vals.dtype)
-    # on every obs_descriptor when averaging, which fails for an int-typed 'run' array
-    # (can't cast NaN into an int dtype) - traced via warnings-as-errors, not a data problem
     dataset = rsatoolbox.data.Dataset(
         measurements=roi_data.T,
         obs_descriptors={'map': beta_meta['map'].values,
@@ -612,46 +649,153 @@ for name, roi_data in roi_betas_data.items():
     noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
                         for residuals in roi_residual_data[name]]
     # Compute the crossnobis RDMs for the full map x direction combos, and the marginal RDMs for direction and map
-    combo_rdms = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
+    condition_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
                                                      noise=noise_precision, cv_descriptor='run')
-    combo_rsms[name] = pd.DataFrame(combo_rdms.get_matrices()[0],
-                                     index=combo_rdms.pattern_descriptors['map_direction'],
-                                     columns=combo_rdms.pattern_descriptors['map_direction'])
-    direction_rdms = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='walking_direction',
+    condition_rdms[name] = pd.DataFrame(condition_rdm.get_matrices()[0],
+                                     index=condition_rdm.pattern_descriptors['map_direction'],
+                                     columns=condition_rdm.pattern_descriptors['map_direction'])
+    direction_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='walking_direction',
                                                          noise=noise_precision, cv_descriptor='run')
-    direction_rsms[name] = pd.DataFrame(direction_rdms.get_matrices()[0],
-                                         index=direction_rdms.pattern_descriptors['walking_direction'],
-                                         columns=direction_rdms.pattern_descriptors['walking_direction'])
-    map_rdms = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map',
+    direction_rdms[name] = pd.DataFrame(direction_rdm.get_matrices()[0],
+                                         index=direction_rdm.pattern_descriptors['walking_direction'],
+                                         columns=direction_rdm.pattern_descriptors['walking_direction'])
+    map_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map',
                                                    noise=noise_precision, cv_descriptor='run')
-    map_rsms[name] = pd.DataFrame(map_rdms.get_matrices()[0],
-                                   index=map_rdms.pattern_descriptors['map'],
-                                   columns=map_rdms.pattern_descriptors['map'])
+    map_rdms[name] = pd.DataFrame(map_rdm.get_matrices()[0],
+                                   index=map_rdm.pattern_descriptors['map'],
+                                   columns=map_rdm.pattern_descriptors['map'])
 
-# Display the full 12x12 map x direction ROI RDMs
-# Each ROI gets its own colorbar since crossnobis distance scales genuinely differ across ROIs,
-# a shared scale would misrepresent the smaller-magnitude ones as flat/empty
-roi_names_ordered = list(roi_betas_data.keys())
-fig, axes = plt.subplots(1, len(roi_names_ordered), figsize=(4 * len(roi_names_ordered), 4.5),
-                          constrained_layout=True)
-for col, name in enumerate(roi_names_ordered):
-    sns.heatmap(combo_rsms[name], ax=axes[col], cmap='RdBu_r', cbar=True, square=True)
-    axes[col].set_title(name, fontsize=20)
-    axes[col].set_xticks([])
-    axes[col].set_yticks([])
+# Display the full 12x12 map x direction ROI RDMs, left ROIs on top, right below
+# Walking direction forms the big blocks, map forms the small blocks within each
+direction_major_order = [f'{map_id}_{direction_id}'
+                          for direction_id in range(1, 5)
+                          for map_id in range(1, 4)]
+
+region_order = ['v1', 'v2', 'ppa', 'rsc', 'opa']
+roi_labels = ['l' + region for region in region_order] + ['r' + region for region in region_order]
+
+# One shared color scale per hemisphere based on off-diagonal values across all areas
+hemi_scales = {}
+for hemi in ['l', 'r']:
+    pooled_off_diagonal = []
+    for region in region_order:
+        matrix = condition_rdms[hemi + region].values
+        pooled_off_diagonal.append(matrix[~np.eye(matrix.shape[0], dtype=bool)])
+    pooled_off_diagonal = np.concatenate(pooled_off_diagonal)
+    # 98th percentile of the off-diagonal to avoid outlier influence on the color scale
+    hemi_scales[hemi] = np.percentile(np.abs(pooled_off_diagonal), 98)
+
+fig, axes = plt.subplots(2, len(region_order), figsize=(4 * len(region_order) + 1, 9),
+                          constrained_layout=True,
+                          gridspec_kw={'wspace': 0.3, 'hspace': 0.3})
+for col, region in enumerate(region_order):
+    for row, hemi in enumerate(['l', 'r']):
+        name = hemi + region
+        reordered_rdm = condition_rdms[name].loc[direction_major_order, direction_major_order]
+        vmax = hemi_scales[hemi]
+        # No per-subplot colorbar - one shared colorbar per hemisphere is added at the end instead
+        sns.heatmap(reordered_rdm, ax=axes[row, col], cmap='RdBu', vmin=-vmax, vmax=vmax,
+                    center=0, cbar=False, square=True)
+        axes[row, col].set_title(name, fontsize=20)
+        axes[row, col].set_xticks([])
+        axes[row, col].set_yticks([])
+        # Mark the boundaries between the 4 walking-direction blocks
+        for boundary in range(3, 12, 3):
+            axes[row, col].axhline(boundary, color='black', linewidth=1)
+            axes[row, col].axvline(boundary, color='black', linewidth=1)
+
+# One vertical colorbar per hemisphere row, placed at the right edge of that row
+for row, hemi in enumerate(['l', 'r']):
+    vmax = hemi_scales[hemi]
+    mappable = plt.cm.ScalarMappable(cmap='RdBu', norm=plt.Normalize(vmin=-vmax, vmax=vmax))
+    fig.colorbar(mappable, ax=axes[row, :], orientation='vertical',
+                 fraction=0.05, pad=0.02, ticks=[-vmax, 0, vmax])
 plt.show()
 
-# Display the ROI direction and map marginal RDMs
-fig, axes = plt.subplots(2, len(roi_names_ordered), figsize=(4 * len(roi_names_ordered), 9),
-                          constrained_layout=True)
-for col, name in enumerate(roi_names_ordered):
-    sns.heatmap(direction_rsms[name], ax=axes[0, col], cmap='RdBu_r', cbar=True, square=True)
-    axes[0, col].set_title(f'{name} direction', fontsize=20)
-    axes[0, col].set_xticks([])
-    axes[0, col].set_yticks([])
+# TEMP: identify the condition driving ropa's cross-shaped pattern
+ropa_reordered = condition_rdms['ropa'].loc[direction_major_order, direction_major_order]
+# Mean absolute distance of each condition to all others, off-diagonal only
+ropa_matrix = ropa_reordered.values
+np.fill_diagonal(ropa_matrix, np.nan)
+row_means = pd.Series(np.nanmean(np.abs(ropa_matrix), axis=1), index=ropa_reordered.index)
+print(row_means.sort_values(ascending=False))
+# Since this is my first time working with fMRI data I am not sure if the spread of
+# crossnobis distances is supposed to be this low. I am guessing this might be because
+# one subject data is being used. So plan is to compute the RDM reliability across runs for each ROI to get a sense of the SNR
 
-    sns.heatmap(map_rsms[name], ax=axes[1, col], cmap='RdBu_r', cbar=True, square=True)
-    axes[1, col].set_title(f'{name} map', fontsize=20)
-    axes[1, col].set_xticks([])
-    axes[1, col].set_yticks([])
+# RDM permutation test
+n_permutations = 100
+rng = np.random.default_rng(0) # Ensure reproducibility of the permutation test
+permutation_results = {}
+for name, roi_data in roi_betas_data.items():
+    noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
+                        for residuals in roi_residual_data[name]]
+
+    # Reuse the already-computed RDM instead of recomputing it
+    computed_matrix = condition_rdms[name].values
+    # Test statistic: mean distance between conditions, off-diagonal only
+    mean_distance = computed_matrix[~np.eye(computed_matrix.shape[0], dtype=bool)].mean()
+
+    null_mean_distances = []
+    for _ in range(n_permutations):
+        # Under H0, condition labels carry no information, so shuffle them
+        # Shuffle within each run to keep the cv_descriptor structure intact
+        shuffled_labels = (beta_meta.groupby('run')['map_direction']
+                            .transform(lambda s: rng.permutation(s.values)))
+        perm_dataset = rsatoolbox.data.Dataset(
+            measurements=roi_data.T,
+            obs_descriptors={'map_direction': shuffled_labels.values,
+                              'run': beta_meta['run'].astype(str).values}
+        )
+        perm_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(perm_dataset, descriptor='map_direction',
+                                                       noise=noise_precision, cv_descriptor='run')
+        perm_matrix = perm_rdm.get_matrices()[0]
+        perm_mean_distance = perm_matrix[~np.eye(perm_matrix.shape[0], dtype=bool)].mean()
+        null_mean_distances.append(perm_mean_distance)
+
+    null_mean_distances = np.array(null_mean_distances)
+    permutation_results[name] = {
+        'mean_distance': mean_distance,
+        'null_mean': null_mean_distances.mean(),
+        'null_std': null_mean_distances.std(),
+        # 95% CI of the null distribution
+        'null_ci_low': np.percentile(null_mean_distances, 2.5),
+        'null_ci_high': np.percentile(null_mean_distances, 97.5),
+        'null_mean_distances': null_mean_distances,
+    }
+# Package into a dataframe
+permutation_df = pd.DataFrame(permutation_results).T
+
+# Plot each ROI's null distribution of mean distance, against the computed mean distance
+# Define the colors for the null distribution and the computed mean distance
+null_color = '#8a8fa3'
+real_color = '#2924bd'
+
+paired_roi_labels = [hemi + region for region in region_order for hemi in ('l', 'r')]
+
+fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
+violin_data = [permutation_results[roi]['null_mean_distances'] for roi in paired_roi_labels]
+parts = ax.violinplot(violin_data, positions=np.arange(len(paired_roi_labels)), showmedians=True)
+# Set the violin plot colors to the custom color defined above
+for body in parts['bodies']:
+    body.set_facecolor(null_color)
+    body.set_edgecolor(null_color)
+    body.set_alpha(0.6) # Reduce opacity
+for key in ('cmedians', 'cbars', 'cmins', 'cmaxes'):
+    parts[key].set_color(null_color)
+# Plot the computed mean distance for each ROI as a scatter point
+real_values = [permutation_results[roi]['mean_distance'] for roi in paired_roi_labels]
+ax.scatter(np.arange(len(paired_roi_labels)), real_values, color=real_color, s=80, zorder=3,
+           label='Computed mean distance')
+# Vertical separators between regions
+for sep in np.arange(1.5, len(paired_roi_labels), 2):
+    ax.axvline(sep, color='lightgray', linewidth=1, zorder=0)
+# Label the axes and add a title
+ax.set_xticks(np.arange(len(paired_roi_labels)))
+ax.set_xticklabels([roi.upper() for roi in paired_roi_labels])
+ax.set_ylabel('Mean off-diagonal crossnobis distance')
+ax.set_title('RDM robustness check: real distance vs label-permuted null')
+ax.legend(loc='upper right', frameon=False)
 plt.show()
+
+
