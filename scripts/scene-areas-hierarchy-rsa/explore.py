@@ -12,13 +12,15 @@ from ants import read_transform, to_nibabel_nifti
 from templateflow import api as tflow
 from scipy import ndimage
 from scipy.spatial.transform import Rotation
-from scipy.stats import mode
+from scipy.stats import mode, norm
 from nilearn.masking import compute_epi_mask, intersect_masks
 from nilearn.glm import first_level
 from nilearn.image import concat_imgs
 import matplotlib.pyplot as plt
 import seaborn as sns
 import rsatoolbox
+from sklearn.manifold import MDS
+from scipy.spatial import procrustes
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -383,7 +385,7 @@ candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
 # Subject 15 is the clear winner having high tSNR for all ROIs, DVARS sits somwhere in the middle of the pack
 # Next on the list, Subject 12 has lower median DVARS but tSNR is lower for all ROIs
 
-# Extract the fMRI data and load Subject 15 data
+# # Extract the fMRI data and load Subject 15 data
 # path_to_zip = raw_data_path / "MRI_Scanning_sub15.zip"
 # zip_file = zipfile.ZipFile(path_to_zip)
 # extract_path = data_path / "extracted" / "subject_15"
@@ -437,8 +439,8 @@ for run in range(1, 5):
     # Append to the list of confounds DataFrames
     confounds_dfs.append(confounds_df)
 # Display the mean mean FD and mean median DVARS values
-print("Mean FD:", pd.Series([df['framewise_displacement'].mean() for df in confounds_dfs]).mean()) # 0.076
-print("Mean of per-run median DVARS:", pd.Series([df['dvars'].median() for df in confounds_dfs]).mean()) # 45.80
+print("Mean FD:", pd.Series([df['framewise_displacement'].mean() for df in confounds_dfs]).mean()) # 0.076, 0.145
+print("Mean of per-run median DVARS:", pd.Series([df['dvars'].median() for df in confounds_dfs]).mean()) # 45.80, 41.40
 # This confirms that the preprocessed data for Subject 15 is of good quality and
 # matches the estimated values from the raw data
 
@@ -499,7 +501,7 @@ design_matrics = [
         frame_times = run_frame_times[run],
         events = events_dfs[run],
         add_regs = confounds_dfs[run][motion_columns],
-        add_reg_names=motion_columns
+        add_reg_names = motion_columns
     ) for run in range(4)
 ]
 
@@ -543,99 +545,200 @@ beta_meta[['map', 'walking_direction']] = beta_meta['map_direction'].str.split('
 run_residuals = glm_model.residuals
 
 # ROI masking
-# Build a hemisphere-preserving scene atlas for subject 15's analysis, separate from
-# the bilateral scene_map used for candidate selection
-scene_parcels_zip = zipfile.ZipFile(data_path / "scene_parcels.zip")
-scene_lr_pairs = {1: 'lPPA', 2: 'rPPA', 3: 'lRSC', 4: 'rRSC', 5: 'lTOS', 6: 'rTOS'}
-scene_lr_map = np.zeros(lPPA_map.shape, dtype=np.int16)
-for label, region in scene_lr_pairs.items():
-    hdr_region = scene_parcels_zip.read(f'scene_parcels/{region}.hdr')
-    img_region = scene_parcels_zip.read(f'scene_parcels/{region}.img')
-    region_file = nib.AnalyzeImage.make_file_map()
-    region_file['header'].fileobj = io.BytesIO(hdr_region)
-    region_file['image'].fileobj = io.BytesIO(img_region)
-    region_map = nib.AnalyzeImage.from_file_map(region_file).get_fdata()
-    scene_lr_map[region_map == 1] = label
-scene_parcels_zip.close()
-scene_lr_nifti = nib.Nifti1Image(scene_lr_map, lPPA_map.affine)
-scene_lr_ants = from_nibabel_nifti(scene_lr_nifti)
+# Use the same docker container to get the freesurfer surface masks from visfatlas
+# mkdir -p data/scene-areas-hierarchy-rsa/derivatives/sub-15/label
+# for hemi in lh rh; do
+#   for region in v1d v1v v2d v2v; do
+#     docker run --rm \
+#       -v "$(pwd)/data/scene-areas-hierarchy-rsa:/data" \
+#       --entrypoint bash \
+#       nipreps/fmriprep:25.2.0 \
+#       -c "export SUBJECTS_DIR=/data/derivatives/sourcedata/freesurfer && \
+#           export FS_LICENSE=/data/license.txt && \
+#           mri_label2label \
+#             --srclabel /data/atlases/visfAtlas/FreeSurfer/MPM_${hemi}_${region}.label \
+#             --srcsubject fsaverage \
+#             --trgsubject sub-15 \
+#             --trglabel /data/derivatives/sub-15/label/${hemi}.${region}.label \
+#             --hemi ${hemi} \
+#             --regmethod surface"
+#   done
+# done
 
-# Same for V1/V2: {ld, lv, rd, rv} = {12, 15, 28, 31} for V1, {13, 16, 29, 32} for V2
-visf_lr_array = np.zeros(visf_ants.numpy().shape, dtype=np.int16)
-visf_lr_array[np.isin(visf_ants.numpy(), [12, 15])] = 7
-visf_lr_array[np.isin(visf_ants.numpy(), [28, 31])] = 8
-visf_lr_array[np.isin(visf_ants.numpy(), [13, 16])] = 9
-visf_lr_array[np.isin(visf_ants.numpy(), [29, 32])] = 10
-visf_lr_ants = visf_ants.new_image_like(visf_lr_array)
+# Do the same for a new silson atlas which has clearly named areas in the surface files
+# for hemi in lh rh; do
+#   for region in PPA OPA MPA; do
+#     docker run --rm \
+#       -v "$(pwd)/data/scene-areas-hierarchy-rsa:/data" \
+#       --entrypoint bash \
+#       nipreps/fmriprep:25.2.0 \
+#       -c "export SUBJECTS_DIR=/data/derivatives/sourcedata/freesurfer && \
+#           export FS_LICENSE=/data/license.txt && \
+#           mri_surf2surf \
+#             --srcsubject fsaverage \
+#             --trgsubject sub-15 \
+#             --hemi ${hemi} \
+#             --sval /data/atlases/silson_atlas/fs_average.${region}.allloc.group_constrained_800.${hemi}.gii \
+#             --tval /data/derivatives/sub-15/label/${hemi}.${region,,}.gii \
+#             --sfmt gii \
+#             --tfmt gii"
+#   done
+# done
 
-# Non-colliding label scheme across both atlases, left/right kept separate
-roi_names = {1: 'lppa', 2: 'rppa', 3: 'lrsc', 4: 'rrsc', 5: 'lopa', 6: 'ropa',
-             7: 'lv1', 8: 'rv1', 9: 'lv2', 10: 'rv2'}
+# Select the top 800 vertices for all areas so there is near uniform number of voxels for each area
+silson_regions = ['ppa', 'opa', 'mpa']
+visf_regions = ['v1d', 'v1v', 'v2d', 'v2v']
+vertex_selection = {}
+for hemi in ['lh', 'rh']:
+    for region in silson_regions:
+        gii_path = preprocessed_path / "label" / f"{hemi}.{region}.gii"
+        prob_data = nib.load(gii_path).darrays[0].data
+        # Drop the zeros
+        nonzero_indices = np.nonzero(prob_data)[0]
+        nonzero_probs = prob_data[nonzero_indices]
+        # Get the indices top 800
+        top_n = min(800, nonzero_indices.size)
+        top_order = np.argsort(nonzero_probs)[::-1][:top_n]
+        # Slice to only include top 800
+        vertex_selection[f'{hemi}_{region}'] = nonzero_indices[top_order]
+    for region in visf_regions:
+        label_path = preprocessed_path / "label" / f"{hemi}.{region}.label"
+        indices, probs = nib.freesurfer.io.read_label(label_path, read_scalars=True)
+        # Get the indices of top 800 
+        top_n = min(800, indices.size)
+        top_order = np.argsort(probs)[::-1][:top_n]
+        # Slice to only include top 800
+        vertex_selection[f'{hemi}_{region}'] = indices[top_order]
 
-# Get the MNI152NLin2009cAsym template to serve as the registration target
-t1_2009_path = tflow.get('MNI152NLin2009cAsym', resolution=1, suffix='T1w', desc=None)
-mni_2009_template_ants = image_read(str(t1_2009_path))
+# Write a top-800 .label file per region, using XYZ from sub-15's own white surface
+freesurfer_dir = data_path / "derivatives" / "sourcedata" / "freesurfer"
+label_dir = preprocessed_path / "label"
+for hemi in ['lh', 'rh']:
+    surf_path = freesurfer_dir / "sub-15" / "surf" / f"{hemi}.white"
+    # Get the XYZ coordinate frame of each hemisphere
+    coords, _ = nib.freesurfer.io.read_geometry(surf_path)
+    for region in silson_regions + visf_regions:
+        # Get the indices of the vertices to write into the file
+        indices = vertex_selection[f'{hemi}_{region}']
+        # Define the file output path, same place as labels/gii for the overall atlas maps
+        out_path = label_dir / f"{hemi}.{region}.top800.label"
+        with open(out_path, 'w') as f:
+            f.write(f"#!ascii label, top 800 vertices, subject sub-15\n{indices.size}\n")
+            for idx in indices:
+                x, y, z = coords[idx]
+                # Write the 5th column for probability as all 1 since areas are already chosen
+                f.write(f"{idx} {x:.3f} {y:.3f} {z:.3f} 1.0\n")
 
-# Register MNI152NLin6Asym(atlas) onto MNI152NLin2009cAsym(data)
-mni_reg = registration(fixed=mni_2009_template_ants, moving=mni_template_ants, type_of_transform='SyN')
+# Create the volumetric masks from the surface vertices in docker container
+# This basically samples each vertex at 10% interval depths
+# A threshold of 30% is chosen as a spatial density filter
+# ie. how many samples are in each voxel and drops any voxel with < 0.3 samples in it (1 cmm voxels)
+# for hemi in lh rh; do
+#   for region in ppa opa mpa v1d v1v v2d v2v; do
+#     docker run --rm \
+#       -v "$(pwd)/data/scene-areas-hierarchy-rsa:/data" \
+#       --entrypoint bash \
+#       nipreps/fmriprep:25.2.0 \
+#       -c "export SUBJECTS_DIR=/data/derivatives/sourcedata/freesurfer && \
+#           export FS_LICENSE=/data/license.txt && \
+#           mri_label2vol \
+#             --label /data/derivatives/sub-15/label/${hemi}.${region}.top800.label \
+#             --temp /data/derivatives/sourcedata/freesurfer/sub-15/mri/T1.mgz \
+#             --regheader /data/derivatives/sourcedata/freesurfer/sub-15/mri/T1.mgz \
+#             --proj frac 0 1 .1 \
+#             --fillthresh 0.3 \
+#             --subject sub-15 \
+#             --hemi ${hemi} \
+#             --o /data/derivatives/sub-15/label/${hemi}.${region}.top800.nii.gz"
+#   done
+# done
 
-# Warp both ROI atlases directly onto subject 15's functional grid in one hop which is in MNI152NLin2009cAsym space
-scene_subject_ants = apply_transforms(fixed=from_nibabel_nifti(subject_mask), moving=scene_lr_ants,
-                                       transformlist=mni_reg['fwdtransforms'],
-                                       interpolator='genericLabel')
-visf_subject_ants = apply_transforms(fixed=from_nibabel_nifti(subject_mask), moving=visf_lr_ants,
-                                      transformlist=mni_reg['fwdtransforms'],
-                                      interpolator='genericLabel')
-scene_subject_data = to_nibabel_nifti(scene_subject_ants).get_fdata()
-visf_subject_data = to_nibabel_nifti(visf_subject_ants).get_fdata()
-
-# Ensure none of the ROIs are outside the brain mask
+# Resample each native-space ROI mask onto the MNI152NLin2009cAsym grid
+t1w_to_mni_xfm = preprocessed_path / "anat" / "sub-15_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5"
 brain_mask_data = subject_mask.get_fdata().astype(bool)
-scene_subject_data = np.where(brain_mask_data, scene_subject_data, 0)
-visf_subject_data = np.where(brain_mask_data, visf_subject_data, 0)
+roi_masks = {}
+for hemi in ['lh', 'rh']:
+    for region in silson_regions + visf_regions:
+        # Path the surface extended to volume files created in docker
+        native_mask_path = label_dir / f"{hemi}.{region}.top800.nii.gz"
+        native_mask_ants = image_read(str(native_mask_path))
+        # Transform to MNI space
+        transformed_ants = apply_transforms(fixed=from_nibabel_nifti(subject_mask), moving=native_mask_ants,
+                                           transformlist=[str(t1w_to_mni_xfm)],
+                                           interpolator='genericLabel')
 
-# Combine both atlases into one subject-15 ROI array
-subject15_roi_data = np.zeros_like(scene_subject_data, dtype=np.int16)
-for label in range(1, 7):
-    subject15_roi_data[scene_subject_data == label] = label
-for label in range(7, 11):
-    subject15_roi_data[visf_subject_data == label] = label
+        roi_mask = to_nibabel_nifti(transformed_ants).get_fdata().astype(bool)
+        # Drop any ROI voxel that falls outside the GLM's actual brain mask
+        roi_masks[f'{hemi}_{region}'] = roi_mask & brain_mask_data
 
 # Pull out actual effect sizes per ROI, voxels x (condition x run) observations
 betas_4d_data = betas_4d.get_fdata()
 roi_betas_data = {}
-for label, name in roi_names.items():
-    roi_betas_data[name] = betas_4d_data[subject15_roi_data == label]
+for name, mask in roi_masks.items():
+    roi_betas_data[name] = betas_4d_data[mask]
 # n_roi_voxels x n (condition, run) observations, per ROI
 
 # Voxel count per ROI actually going into roi_betas_data
 voxel_counts_pre_gm = [{'roi': name, 'n_voxels': roi_data.shape[0]}
                        for name, roi_data in roi_betas_data.items()]
 print(pd.DataFrame(voxel_counts_pre_gm))
-#     roi  n_voxels
-# 0  lppa       586
-# 1  rppa       417
-# 2  lrsc       916
-# 3  rrsc      1491
-# 4  lopa       107
-# 5  ropa       225
-# 6   lv1       705
-# 7   rv1       565
-# 8   lv2       446
-# 9   rv2       422
+#        roi  n_voxels
+# 0   lh_ppa       329
+# 1   lh_opa       232
+# 2   lh_mpa       201
+# 3   lh_v1d       196
+# 4   lh_v1v       174
+# 5   lh_v2d       173
+# 6   lh_v2v       245
+# 7   rh_ppa       308
+# 8   rh_opa       281
+# 9   rh_mpa       193
+# 10  rh_v1d       195
+# 11  rh_v1v       139
+# 12  rh_v2d       191
+# 13  rh_v2v       152
+# ~10% drop expected since functional voxel volume is 2x2x2.3 cmm
 
 # ROI-masked residuals per run, needed for the crossnobis noise precision matrix
 roi_residual_data = {}
-for label, name in roi_names.items():
-    roi_residual_data[name] = [res.get_fdata()[subject15_roi_data == label] for res in run_residuals]
+for name, mask in roi_masks.items():
+    roi_residual_data[name] = [res.get_fdata()[mask] for res in run_residuals]
+
+# MAD-based outlier voxel exclusion (Iglewicz & Hoaglin), modified z > 3.5
+# Applied uniformly to every ROI to exclude any outliers driving statistical analysis
+for name in roi_betas_data:
+    voxel_std = roi_betas_data[name].std(axis=1)
+    mad = np.median(np.abs(voxel_std - np.median(voxel_std)))
+    modified_z = 0.6745 * (voxel_std - np.median(voxel_std)) / mad
+    keep_voxels = np.abs(modified_z) <= 3.5
+    roi_betas_data[name] = roi_betas_data[name][keep_voxels]
+    roi_residual_data[name] = [res[keep_voxels] for res in roi_residual_data[name]]
+
+# Voxel count per ROI after outlier exclusion
+voxel_counts_post_outlier = [{'roi': name, 'n_voxels': roi_data.shape[0]}
+                              for name, roi_data in roi_betas_data.items()]
+print(pd.DataFrame(voxel_counts_post_outlier))
 # n_roi_voxels x n_timepoints for each run, per ROI
+#        roi  n_voxels
+# 0   lh_ppa       326
+# 1   lh_opa       230
+# 2   lh_mpa       199
+# 3   lh_v1d       182
+# 4   lh_v1v       167
+# 5   lh_v2d       163
+# 6   lh_v2v       214
+# 7   rh_ppa       303
+# 8   rh_opa       278
+# 9   rh_mpa       193
+# 10  rh_v1d       168
+# 11  rh_v1v       134
+# 12  rh_v2d       173
+# 13  rh_v2v       143
 
 # Neural RSA via rsatoolbox, crossnobis distance
 # Full 12x12 map x direction RSM kept alongside the marginals, needed as-is tomorrow to
 # subset down to whichever combos match the available DNN comparison videos
-condition_rdms = {}
-direction_rdms = {}
-map_rdms = {}
+condition_rdm_objects = {}
 for name, roi_data in roi_betas_data.items():
     # Define the dataset for rsatoolbox
     dataset = rsatoolbox.data.Dataset(
@@ -648,50 +751,40 @@ for name, roi_data in roi_betas_data.items():
     # Compute the noise precision matrix for crossnobis distance
     noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
                         for residuals in roi_residual_data[name]]
-    # Compute the crossnobis RDMs for the full map x direction combos, and the marginal RDMs for direction and map
-    condition_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
-                                                     noise=noise_precision, cv_descriptor='run')
-    condition_rdms[name] = pd.DataFrame(condition_rdm.get_matrices()[0],
-                                     index=condition_rdm.pattern_descriptors['map_direction'],
-                                     columns=condition_rdm.pattern_descriptors['map_direction'])
-    direction_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='walking_direction',
-                                                         noise=noise_precision, cv_descriptor='run')
-    direction_rdms[name] = pd.DataFrame(direction_rdm.get_matrices()[0],
-                                         index=direction_rdm.pattern_descriptors['walking_direction'],
-                                         columns=direction_rdm.pattern_descriptors['walking_direction'])
-    map_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map',
-                                                   noise=noise_precision, cv_descriptor='run')
-    map_rdms[name] = pd.DataFrame(map_rdm.get_matrices()[0],
-                                   index=map_rdm.pattern_descriptors['map'],
-                                   columns=map_rdm.pattern_descriptors['map'])
+    # Store the raw RDMs object directly, no DataFrame conversion
+    condition_rdm_objects[name] = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
+                                                                       noise=noise_precision, cv_descriptor='run')
 
 # Display the full 12x12 map x direction ROI RDMs, left ROIs on top, right below
 # Walking direction forms the big blocks, map forms the small blocks within each
 direction_major_order = [f'{map_id}_{direction_id}'
                           for direction_id in range(1, 5)
                           for map_id in range(1, 4)]
-
-region_order = ['v1', 'v2', 'ppa', 'rsc', 'opa']
-roi_labels = ['l' + region for region in region_order] + ['r' + region for region in region_order]
-
+# Show the areas linearly in a hierarchy for each hemisphere
+region_order = ['v1d', 'v1v', 'v2d', 'v2v', 'ppa', 'mpa', 'opa']
+roi_labels = [f'lh_{region}' for region in region_order] + [f'rh_{region}' for region in region_order]
 # One shared color scale per hemisphere based on off-diagonal values across all areas
 hemi_scales = {}
-for hemi in ['l', 'r']:
+for hemi in ['lh', 'rh']:
     pooled_off_diagonal = []
     for region in region_order:
-        matrix = condition_rdms[hemi + region].values
+        matrix = condition_rdm_objects[f'{hemi}_{region}'].get_matrices()[0]
         pooled_off_diagonal.append(matrix[~np.eye(matrix.shape[0], dtype=bool)])
     pooled_off_diagonal = np.concatenate(pooled_off_diagonal)
     # 98th percentile of the off-diagonal to avoid outlier influence on the color scale
     hemi_scales[hemi] = np.percentile(np.abs(pooled_off_diagonal), 98)
-
+# Plot the heatmaps
 fig, axes = plt.subplots(2, len(region_order), figsize=(4 * len(region_order) + 1, 9),
                           constrained_layout=True,
-                          gridspec_kw={'wspace': 0.3, 'hspace': 0.3})
+                          gridspec_kw={'wspace': 0.15, 'hspace': 0.15})
 for col, region in enumerate(region_order):
-    for row, hemi in enumerate(['l', 'r']):
-        name = hemi + region
-        reordered_rdm = condition_rdms[name].loc[direction_major_order, direction_major_order]
+    for row, hemi in enumerate(['lh', 'rh']):
+        name = f'{hemi}_{region}'
+        rdm_obj = condition_rdm_objects[name]
+        rdm_df = pd.DataFrame(rdm_obj.get_matrices()[0],
+                               index=rdm_obj.pattern_descriptors['map_direction'],
+                               columns=rdm_obj.pattern_descriptors['map_direction'])
+        reordered_rdm = rdm_df.loc[direction_major_order, direction_major_order]
         vmax = hemi_scales[hemi]
         # No per-subplot colorbar - one shared colorbar per hemisphere is added at the end instead
         sns.heatmap(reordered_rdm, ax=axes[row, col], cmap='RdBu', vmin=-vmax, vmax=vmax,
@@ -703,28 +796,16 @@ for col, region in enumerate(region_order):
         for boundary in range(3, 12, 3):
             axes[row, col].axhline(boundary, color='black', linewidth=1)
             axes[row, col].axvline(boundary, color='black', linewidth=1)
-
 # One vertical colorbar per hemisphere row, placed at the right edge of that row
-for row, hemi in enumerate(['l', 'r']):
+for row, hemi in enumerate(['lh', 'rh']):
     vmax = hemi_scales[hemi]
     mappable = plt.cm.ScalarMappable(cmap='RdBu', norm=plt.Normalize(vmin=-vmax, vmax=vmax))
     fig.colorbar(mappable, ax=axes[row, :], orientation='vertical',
                  fraction=0.05, pad=0.02, ticks=[-vmax, 0, vmax])
 plt.show()
 
-# TEMP: identify the condition driving ropa's cross-shaped pattern
-ropa_reordered = condition_rdms['ropa'].loc[direction_major_order, direction_major_order]
-# Mean absolute distance of each condition to all others, off-diagonal only
-ropa_matrix = ropa_reordered.values
-np.fill_diagonal(ropa_matrix, np.nan)
-row_means = pd.Series(np.nanmean(np.abs(ropa_matrix), axis=1), index=ropa_reordered.index)
-print(row_means.sort_values(ascending=False))
-# Since this is my first time working with fMRI data I am not sure if the spread of
-# crossnobis distances is supposed to be this low. I am guessing this might be because
-# one subject data is being used. So plan is to compute the RDM reliability across runs for each ROI to get a sense of the SNR
-
 # RDM permutation test
-n_permutations = 100
+n_permutations = 200
 rng = np.random.default_rng(0) # Ensure reproducibility of the permutation test
 permutation_results = {}
 for name, roi_data in roi_betas_data.items():
@@ -732,7 +813,7 @@ for name, roi_data in roi_betas_data.items():
                         for residuals in roi_residual_data[name]]
 
     # Reuse the already-computed RDM instead of recomputing it
-    computed_matrix = condition_rdms[name].values
+    computed_matrix = condition_rdm_objects[name].get_matrices()[0]
     # Test statistic: mean distance between conditions, off-diagonal only
     mean_distance = computed_matrix[~np.eye(computed_matrix.shape[0], dtype=bool)].mean()
 
@@ -770,9 +851,9 @@ permutation_df = pd.DataFrame(permutation_results).T
 # Define the colors for the null distribution and the computed mean distance
 null_color = '#8a8fa3'
 real_color = '#2924bd'
-
-paired_roi_labels = [hemi + region for region in region_order for hemi in ('l', 'r')]
-
+# Arrange them as left and right pairs
+paired_roi_labels = [f'{hemi}_{region}' for region in region_order for hemi in ('lh', 'rh')]
+# Generate the violin plot
 fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
 violin_data = [permutation_results[roi]['null_mean_distances'] for roi in paired_roi_labels]
 parts = ax.violinplot(violin_data, positions=np.arange(len(paired_roi_labels)), showmedians=True)
@@ -797,5 +878,112 @@ ax.set_ylabel('Mean off-diagonal crossnobis distance')
 ax.set_title('RDM robustness check: real distance vs label-permuted null')
 ax.legend(loc='upper right', frameon=False)
 plt.show()
+# Subject 12 has similar RDMs and Permutations results
 
+# Check which ROIs lie above z > 1 in the null distribution
+roi_z_scores = {}
+for name, res in permutation_results.items():
+    # Compute the z-scores
+    z = (res['mean_distance'] - res['null_mean']) / res['null_std']
+    # Include only those with z > 1 (ie. above 84th percentile)
+    if z > 1:
+        roi_z_scores[name] = z
+roi_z_table = pd.DataFrame({'z_score': roi_z_scores})
+roi_z_table['percentile'] = norm.cdf(roi_z_table['z_score']) * 100
+print(roi_z_table.sort_values('z_score', ascending=False))
+# Selected areas are with possible hypothetical connections based on anatomical proximity
+# left V1d => left OPA; right V1d => right OPA; left V1d, left V1v => left V2v => left MPA
 
+# Since not all areas have good reliability, probably because this is one subject
+# We need to confirm if the almost flat nature of scene RDMs has anything hidden
+# once the participation of primary areas is removed using PCA
+# Pool left V1d + V1v voxels together as the first stage feeding MPA
+pooled_v1_beta = np.concatenate([roi_betas_data['lh_v1d'], roi_betas_data['lh_v1v']], axis=0)
+pr_rois = ['lh_v1d', 'lh_opa', 'rh_v1d', 'rh_opa', 'lh_v1', 'lh_v2v', 'lh_mpa']
+participation_ratios = {}
+for name in pr_rois:
+    # Use the pooled_v1 effect sizes when the roi is V1
+    roi_data = pooled_v1_beta if name == 'lh_v1' else roi_betas_data[name]
+    # Average the per-run condition betas down to one pattern per condition
+    condition_means = (pd.DataFrame(roi_data.T, index=beta_meta['map_direction'].values)
+                        .groupby(level=0).mean())
+    # Center voxel-wise before PCA
+    centered = condition_means.values - condition_means.values.mean(axis=0)
+    # Eigenvalues of the condition x condition covariance
+    eigenvalues = np.linalg.eigvalsh(np.cov(centered))
+    eigenvalues = eigenvalues[eigenvalues > 0]
+    participation_ratios[name] = (eigenvalues.sum() ** 2) / (eigenvalues ** 2).sum()
+# Display the results grouped by hypothesized pathway
+pathways = {
+    'lh V1d -> OPA': ['lh_v1d', 'lh_opa'],
+    'rh V1d -> OPA': ['rh_v1d', 'rh_opa'],
+    'lh V1 -> V2v -> MPA': ['lh_v1', 'lh_v2v', 'lh_mpa'],
+}
+for pathway_name, rois in pathways.items():
+    print(pathway_name)
+    print(pd.Series({name: participation_ratios[name] for name in rois}))
+    print()
+
+# Compute a pooled V1 ROI for MPA path
+dataset = rsatoolbox.data.Dataset(
+    measurements=pooled_v1_beta.T,
+    obs_descriptors={'map_direction': beta_meta['map_direction'].values,
+                      'run': beta_meta['run'].astype(str).values}
+)
+noise_precision = [np.concatenate([res_v1d, res_v1v], axis=0)
+                    for res_v1d, res_v1v in zip(roi_residual_data['lh_v1d'], roi_residual_data['lh_v1v'])]
+noise_precision = [rsatoolbox.data.prec_from_residuals(res.T) for res in noise_precision]
+pooled_v1_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(
+    dataset, descriptor='map_direction', noise=noise_precision, cv_descriptor='run')
+
+# MDS coordinates for each ROI
+direction_palette = sns.color_palette('colorblind', n_colors=4)
+direction_colors = {d: direction_palette[i] for i, d in enumerate(['1', '2', '3', '4'])}
+map_sizes = {'1': 60, '2': 140, '3': 260}
+# One row per hypothesized pathway
+n_cols = max(len(rois) for rois in pathways.values())
+fig, axes = plt.subplots(len(pathways), n_cols, figsize=(4 * n_cols, 4 * len(pathways)))
+for row, (pathway_name, rois) in enumerate(pathways.items()):
+    for col in range(n_cols):
+        if col >= len(rois):
+            # Spare cell (pathways with < n_cols ROIs) - use the first one to draw a legend
+            if col == len(rois) and not any(axes[r, col].get_legend_handles_labels()[0]
+                                              for r in range(row)):
+                for d, color in direction_colors.items():
+                    axes[row, col].scatter([], [], color=color, s=140, label=f'direction {d}')
+                for m, size in map_sizes.items():
+                    axes[row, col].scatter([], [], color='gray', s=size, label=f'map {m}')
+                axes[row, col].legend(loc='center', frameon=False)
+            axes[row, col].axis('off')
+            continue
+        name = rois[col]
+        # Pooled V1 plotting
+        rdm_obj = pooled_v1_rdm if name == 'lh_v1' else condition_rdm_objects[name]
+        rdm_matrix = rdm_obj.get_matrices()[0]
+        condition_labels = rdm_obj.pattern_descriptors['map_direction']
+        # 2D embedding that best preserves the pairwise crossnobis distances
+        mds_coords = MDS(n_components=2, dissimilarity='precomputed', random_state=23,
+                          normalized_stress='auto').fit_transform(rdm_matrix)
+        # Align every ROI after the first in a pathway to that pathway's first ROI
+        # using Procrustes
+        if col == 0:
+            pathway_reference = mds_coords
+        else:
+            pathway_reference, mds_coords, disparity = procrustes(pathway_reference, mds_coords)
+            print(f'{name} Procrustes disparity vs {rois[0]}: {disparity:.4f}')
+        # Extract the legend for 2 conditions from condition labels
+        directions = [label.split('_')[1] for label in condition_labels]
+        maps = [label.split('_')[0] for label in condition_labels]
+        # Plot each MDS
+        ax = axes[row, col]
+        for i, label in enumerate(condition_labels):
+            # Color for direction, point size for map
+            ax.scatter(mds_coords[i, 0], mds_coords[i, 1],
+                       color=direction_colors[directions[i]], s=map_sizes[maps[i]])
+        ax.set_title(name)
+        # Remove axis ticks
+        ax.set_xticks([])
+        ax.set_yticks([])
+    axes[row, 0].set_ylabel(pathway_name, fontsize=12)
+plt.tight_layout()
+plt.show()
