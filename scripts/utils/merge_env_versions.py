@@ -1,10 +1,13 @@
 import argparse
 import sys
 import yaml
+from pathlib import Path
 
 def main():
     # Define the arguments
     parser = argparse.ArgumentParser()
+    # Post-slug folder under scripts/, prefixed onto the file args below
+    parser.add_argument('--slug')
     # The file to be preserved
     parser.add_argument('--environment', required=True)
     # The file to serve as the lookup
@@ -12,6 +15,12 @@ def main():
     # Output file name
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
+
+    # Resolve paths against scripts/<slug>/ when a slug is given
+    base = Path('scripts') / args.slug if args.slug else Path('.')
+    args.environment = base / args.environment
+    args.full = base / args.full
+    args.out = base / args.out
 
     # Load both ymls
     with open(args.environment, 'r') as f:
