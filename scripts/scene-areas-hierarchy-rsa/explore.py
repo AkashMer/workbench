@@ -20,7 +20,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import rsatoolbox
 from sklearn.manifold import MDS
+from sklearn.linear_model import LinearRegression
 from scipy.spatial import procrustes
+from scipy.spatial.distance import squareform
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
@@ -138,22 +140,6 @@ behavior_data['map'].value_counts()
 # What is the counts of each grouping for Subject 15?
 behavior_data.query('participant_id == 15')[['walking_direction', 'map']].value_counts()
 # 12 trials for most of the combinations, maximum of 20 trials in 2,1 combination
-
-# Next Step: Build Stimulus Categorical RDM
-directions = behavior_data.query('participant_id == 15')['walking_direction'].unique()
-# Sort them in ascending order
-directions = np.sort(directions)
-# Build the RDM for walking directions
-walking_direction_rdm = (directions[:, None] != directions[None, :]).astype(int)
-
-# Do the same for map
-maps = behavior_data.query('participant_id == 15')['map'].unique()
-# Sort them in ascending order
-maps = np.sort(maps)
-# Build the RDM for walking directions
-map_rdm = (maps[:, None] != maps[None, :]).astype(int)
-# Close the behavior zip file connection
-behavior_zip_file.close()
 
 # --- Scene Area Parcels ----
 # Explore the structure of scene area ROI masks
@@ -677,6 +663,10 @@ roi_betas_data = {}
 for name, mask in roi_masks.items():
     roi_betas_data[name] = betas_4d_data[mask]
 # n_roi_voxels x n (condition, run) observations, per ROI
+# ROI-masked residuals per run, needed for the crossnobis noise precision matrix
+roi_residual_data = {}
+for name, mask in roi_masks.items():
+    roi_residual_data[name] = [res.get_fdata()[mask] for res in run_residuals]
 
 # Voxel count per ROI actually going into roi_betas_data
 voxel_counts_pre_gm = [{'roi': name, 'n_voxels': roi_data.shape[0]}
@@ -698,11 +688,6 @@ print(pd.DataFrame(voxel_counts_pre_gm))
 # 12  rh_v2d       191
 # 13  rh_v2v       152
 # ~10% drop expected since functional voxel volume is 2x2x2.3 cmm
-
-# ROI-masked residuals per run, needed for the crossnobis noise precision matrix
-roi_residual_data = {}
-for name, mask in roi_masks.items():
-    roi_residual_data[name] = [res.get_fdata()[mask] for res in run_residuals]
 
 # MAD-based outlier voxel exclusion (Iglewicz & Hoaglin), modified z > 3.5
 # Applied uniformly to every ROI to exclude any outliers driving statistical analysis
@@ -796,7 +781,7 @@ for col, region in enumerate(region_order):
         for boundary in range(3, 12, 3):
             axes[row, col].axhline(boundary, color='black', linewidth=1)
             axes[row, col].axvline(boundary, color='black', linewidth=1)
-# One vertical colorbar per hemisphere row, placed at the right edge of that row
+# One vertical colorbar per hemisphere row
 for row, hemi in enumerate(['lh', 'rh']):
     vmax = hemi_scales[hemi]
     mappable = plt.cm.ScalarMappable(cmap='RdBu', norm=plt.Normalize(vmin=-vmax, vmax=vmax))
@@ -880,51 +865,25 @@ ax.legend(loc='upper right', frameon=False)
 plt.show()
 # Subject 12 has similar RDMs and Permutations results
 
-# Check which ROIs lie above z > 1 in the null distribution
+# Compute z-scores for every ROI against its own null distribution
 roi_z_scores = {}
 for name, res in permutation_results.items():
     # Compute the z-scores
     z = (res['mean_distance'] - res['null_mean']) / res['null_std']
-    # Include only those with z > 1 (ie. above 84th percentile)
-    if z > 1:
-        roi_z_scores[name] = z
+    roi_z_scores[name] = z
 roi_z_table = pd.DataFrame({'z_score': roi_z_scores})
 roi_z_table['percentile'] = norm.cdf(roi_z_table['z_score']) * 100
-print(roi_z_table.sort_values('z_score', ascending=False))
+# Only print ROIs with z > 1 (ie. above 84th percentile)
+print(roi_z_table[roi_z_table['z_score'] > 1].sort_values('z_score', ascending=False))
 # Selected areas are with possible hypothetical connections based on anatomical proximity
-# left V1d => left OPA; right V1d => right OPA; left V1d, left V1v => left V2v => left MPA
+# left V1d => left OPA; right V1d => right OPA; left pooled V1 => left pooled V2 => left MPA
+# Check percentile of lh_v2d which did not pass the 84th percentile test
+print(roi_z_table.loc['lh_v2d']['percentile']) # 69.20
+# Not reliable; left pooled V1 => left V2v => left MPA
 
-# Since not all areas have good reliability, probably because this is one subject
-# We need to confirm if the almost flat nature of scene RDMs has anything hidden
-# once the participation of primary areas is removed using PCA
-# Pool left V1d + V1v voxels together as the first stage feeding MPA
+# Pool left V1d + V1v voxels together as the first stage in the MPA pathway
 pooled_v1_beta = np.concatenate([roi_betas_data['lh_v1d'], roi_betas_data['lh_v1v']], axis=0)
-pr_rois = ['lh_v1d', 'lh_opa', 'rh_v1d', 'rh_opa', 'lh_v1', 'lh_v2v', 'lh_mpa']
-participation_ratios = {}
-for name in pr_rois:
-    # Use the pooled_v1 effect sizes when the roi is V1
-    roi_data = pooled_v1_beta if name == 'lh_v1' else roi_betas_data[name]
-    # Average the per-run condition betas down to one pattern per condition
-    condition_means = (pd.DataFrame(roi_data.T, index=beta_meta['map_direction'].values)
-                        .groupby(level=0).mean())
-    # Center voxel-wise before PCA
-    centered = condition_means.values - condition_means.values.mean(axis=0)
-    # Eigenvalues of the condition x condition covariance
-    eigenvalues = np.linalg.eigvalsh(np.cov(centered))
-    eigenvalues = eigenvalues[eigenvalues > 0]
-    participation_ratios[name] = (eigenvalues.sum() ** 2) / (eigenvalues ** 2).sum()
-# Display the results grouped by hypothesized pathway
-pathways = {
-    'lh V1d -> OPA': ['lh_v1d', 'lh_opa'],
-    'rh V1d -> OPA': ['rh_v1d', 'rh_opa'],
-    'lh V1 -> V2v -> MPA': ['lh_v1', 'lh_v2v', 'lh_mpa'],
-}
-for pathway_name, rois in pathways.items():
-    print(pathway_name)
-    print(pd.Series({name: participation_ratios[name] for name in rois}))
-    print()
-
-# Compute a pooled V1 ROI for MPA path
+# Compute the corresponing crossnobis ROI for this pooled area
 dataset = rsatoolbox.data.Dataset(
     measurements=pooled_v1_beta.T,
     obs_descriptors={'map_direction': beta_meta['map_direction'].values,
@@ -936,54 +895,269 @@ noise_precision = [rsatoolbox.data.prec_from_residuals(res.T) for res in noise_p
 pooled_v1_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(
     dataset, descriptor='map_direction', noise=noise_precision, cv_descriptor='run')
 
-# MDS coordinates for each ROI
-direction_palette = sns.color_palette('colorblind', n_colors=4)
-direction_colors = {d: direction_palette[i] for i, d in enumerate(['1', '2', '3', '4'])}
-map_sizes = {'1': 60, '2': 140, '3': 260}
-# One row per hypothesized pathway
-n_cols = max(len(rois) for rois in pathways.values())
-fig, axes = plt.subplots(len(pathways), n_cols, figsize=(4 * n_cols, 4 * len(pathways)))
-for row, (pathway_name, rois) in enumerate(pathways.items()):
-    for col in range(n_cols):
-        if col >= len(rois):
-            # Spare cell (pathways with < n_cols ROIs) - use the first one to draw a legend
-            if col == len(rois) and not any(axes[r, col].get_legend_handles_labels()[0]
-                                              for r in range(row)):
-                for d, color in direction_colors.items():
-                    axes[row, col].scatter([], [], color=color, s=140, label=f'direction {d}')
-                for m, size in map_sizes.items():
-                    axes[row, col].scatter([], [], color='gray', s=size, label=f'map {m}')
-                axes[row, col].legend(loc='center', frameon=False)
-            axes[row, col].axis('off')
-            continue
-        name = rois[col]
-        # Pooled V1 plotting
+# Since not all areas have good reliability, probably because this is one subject
+# I need to confirm if the almost flat nature of scene RDMs has anything hidden
+# once the participation of primary areas is removed using PCA
+pr_rois = ['lh_v1d', 'lh_opa', 'rh_v1d', 'rh_opa', 'lh_v1', 'lh_v2v', 'lh_mpa']
+participation_ratios = {}
+for name in pr_rois:
+    # Select the pooled V1 RDM object when the roi is V1
+    rdm_obj = pooled_v1_rdm if name == 'lh_v1' else condition_rdm_objects[name]
+    # Extract the 12x12 squared crossnobis distance matrix
+    D = rdm_obj.get_matrices()[0]
+    # Get the number of conditions
+    n = len(conditions)
+    # Build the centering matrix
+    H = np.eye(n) - np.ones((n, n)) / n
+    # Compute the similarity matrix
+    S = -0.5 * H @ D @ H
+    # Get the eigenvalues of the similarity matrix
+    eigenvalues = np.linalg.eigvalsh(S)
+    # Clip tiny negative eigenvalues (floating-point noise) to zero
+    eigenvalues = np.maximum(eigenvalues, 0)
+    # Compute the raw participation ratio
+    pr = (eigenvalues.sum() ** 2) / (eigenvalues ** 2).sum()
+    # Normalize by the max achievable rank (n - 1, centering removes one dimension)
+    participation_ratios[name] = pr / (n - 1)
+# Display the results grouped by hypothesized pathway
+pathways = {
+    'lh V1d -> OPA': ['lh_v1d', 'lh_opa'],
+    'rh V1d -> OPA': ['rh_v1d', 'rh_opa'],
+    'lh V1 -> V2v -> MPA': ['lh_v1', 'lh_v2v', 'lh_mpa'],
+}
+for pathway_name, rois in pathways.items():
+    print(pathway_name)
+    print(pd.Series({name: participation_ratios[name] for name in rois}))
+    print()
+# Equal participation along the pathways, with only left OPA showing good jump
+
+# Compute MDS coordinates, stress, and Procrustes disparity for every ROI in every pathway
+mds_rows = []
+for pathway_name, rois in pathways.items():
+    for stage, name in enumerate(rois):
+        # Pooled V1 RDM object when the roi is V1
         rdm_obj = pooled_v1_rdm if name == 'lh_v1' else condition_rdm_objects[name]
+        # Extract the matrix
         rdm_matrix = rdm_obj.get_matrices()[0]
+        # Get the condition labels
         condition_labels = rdm_obj.pattern_descriptors['map_direction']
-        # 2D embedding that best preserves the pairwise crossnobis distances
-        mds_coords = MDS(n_components=2, dissimilarity='precomputed', random_state=23,
-                          normalized_stress='auto').fit_transform(rdm_matrix)
-        # Align every ROI after the first in a pathway to that pathway's first ROI
-        # using Procrustes
-        if col == 0:
+        # Scale the RDM down to 2 dimensions
+        mds_estimator = MDS(n_components=2, dissimilarity='precomputed', random_state=23)
+        mds_coords = mds_estimator.fit_transform(rdm_matrix)
+        # Align every ROI MDS to the previous along each pathway
+        disparity = None
+        if stage == 0:
             pathway_reference = mds_coords
         else:
             pathway_reference, mds_coords, disparity = procrustes(pathway_reference, mds_coords)
-            print(f'{name} Procrustes disparity vs {rois[0]}: {disparity:.4f}')
-        # Extract the legend for 2 conditions from condition labels
-        directions = [label.split('_')[1] for label in condition_labels]
-        maps = [label.split('_')[0] for label in condition_labels]
-        # Plot each MDS
-        ax = axes[row, col]
+        # Build a tidy row for each point
         for i, label in enumerate(condition_labels):
-            # Color for direction, point size for map
-            ax.scatter(mds_coords[i, 0], mds_coords[i, 1],
-                       color=direction_colors[directions[i]], s=map_sizes[maps[i]])
-        ax.set_title(name)
-        # Remove axis ticks
-        ax.set_xticks([])
-        ax.set_yticks([])
-    axes[row, 0].set_ylabel(pathway_name, fontsize=12)
-plt.tight_layout()
+            mds_rows.append({
+                'pathway': pathway_name,
+                'stage': stage,
+                'roi': name,
+                'x': mds_coords[i, 0],
+                'y': mds_coords[i, 1],
+                'direction': label.split('_')[1],
+                'map': label.split('_')[0],
+                'stress': mds_estimator.stress_,
+                'disparity': disparity,
+            })
+mds_df = pd.DataFrame(mds_rows)
+
+# Plot the MDS coordinates
+direction_palette = sns.color_palette('colorblind', n_colors=4)
+g = sns.FacetGrid(mds_df, row='pathway', col='stage', row_order=pathways.keys(),
+                   height=4, despine=True, sharex=False, sharey=False)
+g.map_dataframe(sns.scatterplot, x='x', y='y', hue='direction', style='map',
+                 palette=direction_palette, s=140);
+# Grab legend handles/labels from a confirmed non-empty facet
+legend_ax = next(ax for ax in g.axes.flat if ax.get_legend_handles_labels()[0])
+handles, labels = legend_ax.get_legend_handles_labels()
+# Loop over each to add subplot titles
+legend_drawn = False
+for (pathway_name, stage), ax in g.axes_dict.items():
+    facet_data = mds_df[(mds_df['pathway'] == pathway_name) & (mds_df['stage'] == stage)]
+    if facet_data.empty:
+        # Draw the legend in one of the empty boxes of the first 2 pathways
+        if not legend_drawn:
+            ax.legend(handles, labels, loc='center', frameon=False)
+            legend_drawn = True
+        ax.set_title('')
+        ax.axis('off')
+        continue
+    row = facet_data.iloc[0]
+    # Add the ROI labels with MDS stress and Procrustes
+    title = f'{row["roi"]}\nStress: {row["stress"]:.4f}'
+    if pd.notna(row['disparity']):
+        prev_roi = mds_df.loc[(mds_df['pathway'] == pathway_name) & (mds_df['stage'] == stage - 1),
+                               'roi'].iloc[0]
+        title += f'\nDisparity vs {prev_roi}: {row["disparity"]:.4f}'
+    ax.set_title(title, fontsize=9)
+    ax.set_xticks([])
+    ax.set_yticks([])
 plt.show()
+# The space is clearly expanding across each pathway, the groupings are subtle
+# Next step should be if the expanded space is not entirely built from low level features supplied by V1
+
+# --- Partial RSA: is the higher-order structure explained by low level features from V1 alone? ---
+# Fixed condition order for every model/neural RDM
+condition_order = list(pooled_v1_rdm.pattern_descriptors['map_direction'])
+
+# Function which returns the vectorized form of the upper triangle
+def vectorize_rdm(rdm_obj, order):
+    rdm_df = pd.DataFrame(rdm_obj.get_matrices()[0],
+                           index=rdm_obj.pattern_descriptors['map_direction'],
+                           columns=rdm_obj.pattern_descriptors['map_direction'])
+    reordered = rdm_df.loc[order, order].values
+    return squareform(reordered, checks=False)
+
+# Build the 12x12 direction and map model RDMs with directions as primary and map as secondary
+directions_12 = [label.split('_')[1] for label in condition_order]
+maps_12 = [label.split('_')[0] for label in condition_order]
+direction_rdm_12 = (np.array(directions_12)[:, None] != np.array(directions_12)[None, :]).astype(int)
+map_rdm_12 = (np.array(maps_12)[:, None] != np.array(maps_12)[None, :]).astype(int)
+direction_vec = direction_rdm_12[np.triu_indices(len(condition_order), k=1)]
+map_vec = map_rdm_12[np.triu_indices(len(condition_order), k=1)]
+
+# VIF for each predictor in {V1, direction, map} to look for collinearity of factors
+vif_results = {}
+for pathway_name, rois in pathways.items():
+    v1_name = rois[0]
+    v1_obj = pooled_v1_rdm if v1_name == 'lh_v1' else condition_rdm_objects[v1_name]
+    v1_vec = vectorize_rdm(v1_obj, condition_order)
+    predictors = pd.DataFrame({'v1': v1_vec, 'direction': direction_vec, 'map': map_vec})
+    for col in predictors.columns:
+        other_cols = [c for c in predictors.columns if c != col]
+        r_squared = LinearRegression().fit(predictors[other_cols], predictors[col]).score(
+            predictors[other_cols], predictors[col])
+        vif_results[(pathway_name, col)] = 1 / (1 - r_squared)
+vif_table = pd.Series(vif_results).rename('VIF')
+print(vif_table)
+# All are close to 1 for each left V1d, right V1d and left pooled V1
+# No multicollinearity concerns
+
+# higher_order_rdm ~ V1_rdm + direction_rdm + map_rdm, per pathway per stage
+regression_results = {}
+for pathway_name, rois in pathways.items():
+    v1_name = rois[0]
+    v1_obj = pooled_v1_rdm if v1_name == 'lh_v1' else condition_rdm_objects[v1_name]
+    v1_vec = vectorize_rdm(v1_obj, condition_order)
+    # Initialize the predictors for the model
+    predictors = np.column_stack([v1_vec, direction_vec, map_vec])
+    for stage, name in enumerate(rois):
+        # Avoid baseline V1 stage
+        if stage == 0:
+            continue
+        target_obj = condition_rdm_objects[name]
+        target_vec = vectorize_rdm(target_obj, condition_order)
+        # Initialize and fit the model
+        fit = LinearRegression().fit(predictors, target_vec)
+        # Extract the coefficients
+        regression_results[(pathway_name, name)] = {
+            'v1_coef': fit.coef_[0],
+            'direction_coef': fit.coef_[1],
+            'map_coef': fit.coef_[2],
+        }
+regression_df = pd.DataFrame(regression_results).T
+print(regression_df)
+#                              v1_coef  direction_coef  map_coef
+# lh V1d -> OPA       lh_opa  0.078831        0.000674  0.000794
+# rh V1d -> OPA       rh_opa -0.100562        0.000416 -0.000150
+# lh V1 -> V2v -> MPA lh_v2v  0.134817        0.002051  0.000791
+#                     lh_mpa -0.016874       -0.000049  0.000345
+# Now to check if the coefficients can actually be interpreted
+
+# Permutation null for the regression coefficients
+coef_permutation_results = {}
+for pathway_name, rois in pathways.items():
+    v1_name = rois[0]
+    # Reuse the already-computed noise precision
+    v1_noise = noise_precision if v1_name == 'lh_v1' else \
+        [rsatoolbox.data.prec_from_residuals(residuals.T) for residuals in roi_residual_data[v1_name]]
+    v1_data = pooled_v1_beta if v1_name == 'lh_v1' else roi_betas_data[v1_name]
+    for stage, name in enumerate(rois):
+        # Avoid baseline V1 stage
+        if stage == 0:
+            continue
+        target_noise = [rsatoolbox.data.prec_from_residuals(residuals.T)
+                         for residuals in roi_residual_data[name]]
+        target_data = roi_betas_data[name]
+
+        null_direction_coefs = []
+        null_map_coefs = []
+        for _ in range(n_permutations):
+            # Shuffle within each run to keep the cv_descriptor structure intact
+            shuffled_labels = (beta_meta.groupby('run')['map_direction']
+                                .transform(lambda s: rng.permutation(s.values)))
+            # Rebuild V1's RDM from this shuffle
+            v1_perm_dataset = rsatoolbox.data.Dataset(
+                measurements=v1_data.T,
+                obs_descriptors={'map_direction': shuffled_labels.values,
+                                  'run': beta_meta['run'].astype(str).values}
+            )
+            v1_perm_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(
+                v1_perm_dataset, descriptor='map_direction', noise=v1_noise, cv_descriptor='run')
+            # Rebuild the higher-order area's RDM from the same shuffle
+            target_perm_dataset = rsatoolbox.data.Dataset(
+                measurements=target_data.T,
+                obs_descriptors={'map_direction': shuffled_labels.values,
+                                  'run': beta_meta['run'].astype(str).values}
+            )
+            target_perm_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(
+                target_perm_dataset, descriptor='map_direction', noise=target_noise, cv_descriptor='run')
+
+            # Vectorize both, fit the same regression, keep the direction/map coefficients
+            v1_perm_vec = vectorize_rdm(v1_perm_rdm, condition_order)
+            target_perm_vec = vectorize_rdm(target_perm_rdm, condition_order)
+            perm_predictors = np.column_stack([v1_perm_vec, direction_vec, map_vec])
+            perm_fit = LinearRegression().fit(perm_predictors, target_perm_vec)
+            null_direction_coefs.append(perm_fit.coef_[1])
+            null_map_coefs.append(perm_fit.coef_[2])
+
+        null_direction_coefs = np.array(null_direction_coefs)
+        null_map_coefs = np.array(null_map_coefs)
+        coef_permutation_results[(pathway_name, name)] = {
+            'direction_coef': regression_results[(pathway_name, name)]['direction_coef'],
+            'null_direction_coefs': null_direction_coefs,
+            'map_coef': regression_results[(pathway_name, name)]['map_coef'],
+            'null_map_coefs': null_map_coefs,
+        }
+
+# Plot each target areas' null distribution of direction/map coefficients
+# against the computed coefficient
+fig, axes = plt.subplots(len(pathways), 1, figsize=(8, 5 * len(pathways)), constrained_layout=True)
+for ax, (pathway_name, rois) in zip(axes, pathways.items()):
+    # Target areas for this pathway only
+    pathway_targets = [name for name in rois[1:]]
+    # Two things per pathway direction, then map
+    positions = np.arange(len(pathway_targets) * 2)
+    null_data = []
+    real_values = []
+    tick_labels = []
+    for name in pathway_targets:
+        for coef_name in ['direction', 'map']:
+            null_data.append(coef_permutation_results[(pathway_name, name)][f'null_{coef_name}_coefs'])
+            real_values.append(coef_permutation_results[(pathway_name, name)][f'{coef_name}_coef'])
+            tick_labels.append(f'{name}\n{coef_name}')
+    parts = ax.violinplot(null_data, positions=positions, showmedians=True)
+    # Set the violin plot colors
+    for body in parts['bodies']:
+        body.set_facecolor(null_color)
+        body.set_edgecolor(null_color)
+        body.set_alpha(0.6) # Reduce opacity
+    for key in ('cmedians', 'cbars', 'cmins', 'cmaxes'):
+        parts[key].set_color(null_color)
+    # Plot the computed coefficient
+    ax.scatter(positions, real_values, color=real_color, s=80, zorder=3,
+               label='Computed coefficient')
+    # Vertical separators between stages
+    for sep in np.arange(1.5, len(positions), 2):
+        ax.axvline(sep, color='lightgray', linewidth=1, zorder=0)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(tick_labels, fontsize=8)
+    ax.set_ylabel('Regression coefficient')
+    ax.set_title(pathway_name)
+    ax.legend(loc='upper right', frameon=False)
+plt.show()
+# None of the direction or map regressors lie outside the 95% confidence interval
