@@ -3,4 +3,4 @@
 # so figures resolve correctly when the site is built from Nole-Nexus Website/ as root
 project:
   type: default
-  post-render: post_render.py
+  post-render: utils/post_render.py

@@ -19,3 +19,6 @@ data/*
 # Ignore local IDE settings
 .positron/
 .vscode/
+
+# Personal version of environment
+my_environment.yml
