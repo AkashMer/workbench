@@ -1,0 +1,110 @@
+---
+title: Undecided
+jupyter: fmri
+format: gfm
+---
+
+This post implements a representational similarity analysis of scene-selective visual areas using human fMRI data in order to answer the following question: [[Landscape/@Epstein_2019/@Epstein_2019 | Can the relationship between low-level features and the higher-level scene information and the hierarchical nature of scene-selective areas be demonstrated using RSA?]].
+
+## Stimulus Description
+### Experimental Setup
+The raw data came from [A dataset of human fMRI/MEG experiments with eye tracking for spatial memory research using virtual reality](https://doi.org/10.1016/j.dib.2022.108380)[@Zhang_2022]. Subjects performed a spatial memory (SM) task where a first-person perpective 3D Unity Engine (Unity Technologies, San Francisco) game video was displayed on a LCD monitor. Each trial was divided into three sequential periods:
+
+- **Walking period**(6.0 s): Walking motion from the boundary of a circular environment towards the center where three human characters (3D models from [Mixamo, San Francisco](https://www.mixamo.com)) are arranged pseudorandomly at three adjacent vertices of a square. The direction of approach corresponds to the 4 sides of the square.
+- **Facing period**(2.0 s): The camera centers on a cue character to convey the orientation with respect to the spatial environment.
+- **Targeting period**(2.0 s): The screen displayed a target character in a pixelated noise background, simulating the target's location relative to the subject's position.
+- **Choice period**: Subjects indicated the target's location relative to the simulated orientation of the subject (facing period) with a self-paced key press (left, right, or back). The choices were displayed against a blank background.
+
+The periods were interspersed with the same pixelated noise screen used during the targeting period each 2.0 seconds long. During the inter-trial period(3.0 - 7.0 s) the same blank background as the choice period was shown on the screen. The subjects were required to pay attention to the heads of the human characters because there was a 20.6% probability for a character to nod their head at any random time point during the walking period. Such trials are identified as head-nodding detection (HND) trials, which served a dual purpose: draw attention away from spatial layout and performance measurement.
+The following analysis excludes the choice period which relies on memory and the HND trials which only contained the walking period.
+
+**Ethological significance**: The three periods which are included involve active encoding of the spatial layout with each successive period adding more context. The first-person virtual environment is more ethologically relevant than static image viewing, though the the non-immersive nature of the monitor presentation limits how naturalistic the visual input is relative to real-world spatial perception.
+
+**Brain areas**: The brain areas analyzed were:
+
+- *Primary/Secondary Visual Cortex*:
+    - *V1*: V1d, V1v
+    - *V2*: V2d, V2v
+- *Scene-Selective Areas*:
+    - *Parahippocampal Place Area*: PPA
+    - *Occipital Place Area*: OPA
+    - *Medial Place Area/Retrosplenial Complex*: MPA/RSC
+
+These areas span the low-level to high-level feature hierarchy for scene perception.
+
+**Context of the recorded activity**: Each subject went through four scanning sessions lasting ~70 minutes. All trials/runs were recorded under similar conditions of passive viewing and the same recording paradigm (SM/HND tasks) which reduces the effect of global brain states. Eye tracking using pupil position and size were also recorded to serve as behavioral markers.
+
+```{bash}
+#| code-fold: true
+#| code-summary: "Download raw fMRI data"
+#| label: download-data
+#| eval: false
+
+# All the fMRI data downloaded using the url manifest from scidb using aria2c
+aria2c -c -x 16 -s 16 -k 1M --content-disposition \
+  -d ../../data/scene-areas-hierarchy-rsa/raw_fmri \
+  -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Imports"
+#| label: imports
+
+from pathlib import Path
+import zipfile
+import io
+import numpy as np
+import pandas as pd
+import nibabel as nib
+import pydicom
+from nibabel.nicom import dicomwrappers
+import ants
+from templateflow import api as tflow
+from scipy import ndimage
+from scipy.spatial.transform import Rotation
+from scipy.stats import mode, norm
+from scipy.spatial import procrustes
+from scipy.spatial.distance import squareform
+from nilearn.masking import compute_epi_mask, intersect_masks
+from nilearn.glm import first_level
+from nilearn.image import concat_imgs
+import matplotlib.pyplot as plt
+import seaborn as sns
+import rsatoolbox
+from sklearn.manifold import MDS
+from sklearn.linear_model import LinearRegression
+```
+
+## Data Structure
+### Raw Data Structure
+
+The raw data[@Zhang_2022] is structured as follows:
+
+| **File** | **Naming** | **Format** |
+| -------- | ---------- | ---------- |
+| *Functional/Anatomical scans* | `MRI_Scanning_sub{8-26}.zip` | DICOM, one `.dcm` per slice |
+| *Trial conditions* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_rawdata.txt` | tab-separated text files, no header |
+| *Trial timing* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_Time_record_t.txt` | tab-separated text files, no header |
+| *Eye tracking* | `fMRI_eyedate.zip/fMRI_eyedate/el_sub{8-26}.edf` | EyeLink `.edf` file |
+
+Of the trial conditions file's columns, this analysis uses
+
+### Cohort Size & Subject Selection
+
+There are `19` subjects in total.
+
+### Preprocessed Data Structure
+
+
+## Behavioral State
+
+## High-Dimensional Population Response Space
+
+## Visualizing the Representational Map
+
+## Validation of the Representational Map
+
+## Appendix {#appendix}
+
+## References
