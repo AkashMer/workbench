@@ -34,9 +34,11 @@ These areas span the low-level to high-level feature hierarchy for scene percept
 
 **Context of the recorded activity**: Each subject went through four scanning sessions lasting ~70 minutes. All trials/runs were recorded under similar conditions of passive viewing and the same recording paradigm (SM/HND tasks) which reduces the effect of global brain states. Eye tracking using pupil position and size were also recorded to serve as behavioral markers.
 
+```{=html}
+<details class="code-fold"><summary>Download raw fMRI data</summary>
+```
+
 ```{bash}
-#| code-fold: true
-#| code-summary: "Download raw fMRI data"
 #| label: download-data
 #| eval: false
 
@@ -44,6 +46,10 @@ These areas span the low-level to high-level feature hierarchy for scene percept
 aria2c -c -x 16 -s 16 -k 1M --content-disposition \
   -d ../../data/scene-areas-hierarchy-rsa/raw_fmri \
   -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
+```
+
+```{=html}
+</details>
 ```
 
 ```{python}
@@ -74,6 +80,11 @@ import seaborn as sns
 import rsatoolbox
 from sklearn.manifold import MDS
 from sklearn.linear_model import LinearRegression
+
+# Get the current data-slug for the current folder and the data directory
+current_dir = Path.cwd()
+data_slug = current_dir.name
+data_path = current_dir.parents[1] / "data" / data_slug
 ```
 
 ## Data Structure
@@ -81,20 +92,246 @@ from sklearn.linear_model import LinearRegression
 
 The raw data[@Zhang_2022] is structured as follows:
 
-| **File** | **Naming** | **Format** |
-| -------- | ---------- | ---------- |
-| *Functional/Anatomical scans* | `MRI_Scanning_sub{8-26}.zip` | DICOM, one `.dcm` per slice |
-| *Trial conditions* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_rawdata.txt` | tab-separated text files, no header |
-| *Trial timing* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_Time_record_t.txt` | tab-separated text files, no header |
-| *Eye tracking* | `fMRI_eyedate.zip/fMRI_eyedate/el_sub{8-26}.edf` | EyeLink `.edf` file |
+**MRI scans**
 
-Of the trial conditions file's columns, this analysis uses
+| **Scan** | **Naming** | **Format** | **Voxel size** | **TR** | **x $\times$ y $\times$ slices** | **Volumes** |
+| -------- | ---------- | ---------- | --------------- | ------ | ------------------------------- | ----------- |
+| *Functional BOLD* | `MRI_Scanning_sub{8-26}.zip` | DICOM | `2` $\times$ `2` $\times$ `2.3` mm | `2.0` s | `112` $\times$ `112` $\times$ `62` | ~ `460-514` |
+| *Anatomical T1w* | `MRI_Scanning_sub{8-26}.zip` | DICOM | `1` $\times$ `0.5` $\times$ `0.5` mm | — | `192` $\times$ `448` $\times$ `512` | — |
+
+**Behavioral files**
+
+| **File** | **Naming** | **Organization** |
+| -------- | ---------- | ----------------- |
+| *Trial conditions* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_rawdata.txt` | `160` rows: `40` trials/run $\times$ `4` runs |
+| *Trial timings* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_Time_record_t.txt` | `160` rows: `40` trials/run $\times$ `4` runs |
+| *Eye tracking* | `fMRI_eyedate.zip/fMRI_eyedate/el_sub{8-26}.edf` | EyeLink proprietary format, excluded |
+
+For the purposes of this analysis, the following columns from the behavioral files are used:
+
+- **Trial conditions**:
+    - *map* (column 2) - 3 out of 6 possible arrangements of the characters at 3 vertices of the square. No stim files are available to signify which 3 maps were psudorandomly chosen for each subject. Nevertheless, this condition is included since it determines categorically determines the spatial layout being simulated.
+    - *walking direction* (column 3) - The approach direction corresponding to the 4 sides of the square. This condition is included because it determines the overall structure of the scene.
+    - *type of trial* (column 5) - Marks SM trials as `NA` and HND trials by the key pressed to answer whether the subject saw the character displayed on the screen nod their head.
+    - *HND trial performance* (column 6) - included as a behavioral metric to be used for subject selection criteria.
+- **Trial timings**:
+    - *onset of walking period* (column 5) - corresponds to the beginning of trial for our analysis.
+    - *onset of response cue* (column 11) - corresponds to the end of the trial for our analysis. The inter-stimulus interval (ISI) before the choice period is included due to the inherent slowness of blood movement as compared to electrical activity.
 
 ### Cohort Size & Subject Selection
 
-There are `19` subjects in total.
+There are `19` subjects in total. The ideal cohort size for a representational map estimation is 1 if sufficient number of neurons/voxels are recorded[@Noda_2024-03-22]. The following algorithm is to be used to rank each subject:
 
-### Preprocessed Data Structure
+- Exclude if mean **Frame Displacement** (FD) > 0.2;
+- Rank remaining using a rank-sum approach based on the **maximum standard deviation of the frame-to-frame DVARS[@Power_2012] profile across runs** (penalizes sudden spikes) and **HND trial performance** (secondary task engagement)
+
+The two best and worst candidates with their corresponding metrics and ranks are as follows:
+
+```{python}
+#| code-fold: true
+#| code-summary: "Candidate selection"
+#| label: candidate-selection
+
+# Define path to raw data folder where files were downloaded
+raw_data_path = data_path / "raw_fmri"
+
+# Define the path to behavior data file
+path_to_behavior_zip = raw_data_path / "fMRI_behavior.zip"
+# Load the behavior trial conditions data for all subjects
+behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
+# Get all the subject ids for the fMRI data
+subject_list = [int(name.split('_')[2]) for name in behavior_zip_file.namelist() 
+                if 'MACOSX' not in name and 'rawdata' in name]
+# Collate all the behavior data into one large dataframe
+behavior_data = pd.DataFrame()
+for sub in subject_list:
+    filepath = f'fMRI_behavior/sub_{sub}_formal_rawdata.txt'
+    trial_cond = pd.read_table(behavior_zip_file.open(filepath),
+                                names = ['map', 'walking_direction', 'trial_type', 'hnd_performance'],
+                                usecols = [1, 2, 4, 5])
+    # Col 0 is not participant id
+    trial_cond['participant_id'] = sub
+    behavior_data = pd.concat([behavior_data, trial_cond])
+
+# Define the path to check if candidate selection file already exists
+candidate_selection_path = data_path / "derivatives" / "candidate_selection"
+candidate_selection_path.mkdir(parents=True, exist_ok=True)
+candidate_metrics_path = candidate_selection_path / "candidate_metrics.tsv"
+
+if candidate_metrics_path.exists():
+    candidate_metrics = pd.read_table(candidate_metrics_path)
+else:
+    bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
+    subject_rows = []
+    # Loop over each subject
+    for sub in subject_list:
+        path_to_sub_zip = raw_data_path / f"MRI_Scanning_sub{sub}.zip"
+        run_metrics = []
+        # Loop over each bold run for this subject
+        for bold_run in bold_runs:
+            # Collate all frames from this bold run
+            zip_file = zipfile.ZipFile(path_to_sub_zip)
+            run_files = sorted(name for name in zip_file.namelist() if bold_run in name and not name.endswith('/'))
+            running_sum = np.zeros((112, 112, 62))
+            bold_ants_list = []
+            # Get all frames in ANTs format as a list
+            for file in run_files:
+                # Read DICOM file
+                dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
+                # Wrap the data to read directly from the zipped format
+                dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
+                # Extract the 3D data for each frame
+                dcm_3d = dcm_wrap.get_data()
+                # Add to the running sum to get the mean value for normalization
+                running_sum += dcm_3d
+                # Convert to ANTs format
+                ants_format = ants.from_numpy(dcm_3d, spacing=(2, 2, 2.3))
+                # Append to list
+                bold_ants_list.append(ants_format)
+            # Close the zip file
+            zip_file.close()
+
+            # Compute the mean frame and convert to ANTs format
+            mean_frame_ants = ants.from_numpy(running_sum/len(run_files), spacing = (2, 2, 2.3))
+
+            # Compute the motion correction metrics on the BOLD run
+            bold_4d = ants.list_to_ndimage(ants.make_image((*bold_ants_list[0].shape, len(bold_ants_list)), pixeltype='unsigned int',
+                                                    origin = (*bold_ants_list[0].origin, 0)),
+                                        bold_ants_list)
+
+            # Mean FD Computation - Only using evenly spaced 50 frames
+            frame_fd_running_sum = 0
+            for frame in np.linspace(1, len(bold_ants_list) - 1, 50, dtype = int):
+                # Register each frame against previous frame
+                frame_reg = ants.registration(fixed = bold_ants_list[frame-1], moving = bold_ants_list[frame],
+                                            type_of_transform = 'Rigid')
+                # Load the transformed frame and extract the parameters
+                tx = ants.read_transform(frame_reg['fwdtransforms'][0]).parameters
+                # Compute the eular angles from the rotation of the image
+                euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
+                # Convert to mm using 50 mm general head size
+                displacement = euler_angles * 50
+                # Get the translations from the transformed parameters
+                translations = tx[9:]
+                # Compute the FD for this frame
+                frame_fd = np.sum(np.abs(np.append(displacement, translations)))
+                # Add the each frame_fd to a running sum
+                frame_fd_running_sum += frame_fd
+            # Compute the mean FD
+            run_mean_fd = frame_fd_running_sum/50
+
+            # DVARS computation
+            brain_mask = compute_epi_mask(ants.to_nibabel_nifti(mean_frame_ants)).get_fdata().astype(bool)
+            bold_run_signal = bold_4d.numpy().astype(np.float64)[brain_mask]
+            # Rescale so the whole-brain modal intensity becomes 1000, per Power et al. (2012)
+            brain_mode = mode(bold_run_signal, axis = None).mode
+            mode1000_signal = bold_run_signal / brain_mode * 1000
+            # Compute the voxel differences between adjacent frames
+            frame_diff = np.diff(mode1000_signal, axis = -1)
+            # Compute the RMS across all brain voxels
+            rms = np.sqrt(np.mean(frame_diff**2, axis = 0))
+            # Compute the standard deviation of frame-to-frame DVARS across the whole run
+            run_sd_dvars = np.std(rms)
+
+            # Collect this run's metrics
+            run_metrics.append({'mean_fd': run_mean_fd, 'sd_dvars': run_sd_dvars})
+
+        # Average mean FD and max SD(DVARS) across this subject's 4 runs
+        run_metrics_df = pd.DataFrame(run_metrics)
+        subject_row = {'mean_fd': run_metrics_df['mean_fd'].mean(), 'sd_dvars': run_metrics_df['sd_dvars'].max()}
+        subject_row['participant_id'] = sub
+        subject_rows.append(subject_row)
+    # Collate results into one DataFrame
+    candidate_metrics = pd.DataFrame(subject_rows)
+    # Rearrange the columns so participant_id is the first column
+    participant_ids = candidate_metrics.pop('participant_id')
+    candidate_metrics.insert(0, 'participant_id', participant_ids)
+
+    # Compute HND task accuracy (as a percentage) per subject from the already-loaded behavior data
+    hnd_trials = behavior_data[behavior_data['hnd_performance'].isin(['Correct', 'Incorrect'])]
+    hnd_performance_metric = (hnd_trials.groupby('participant_id')['hnd_performance']
+                        .apply(lambda x: (x == 'Correct').mean() * 100)
+                        .rename('hnd_accuracy')
+                        .reset_index())
+
+    # Merge HND accuracy into the candidate metrics
+    candidate_metrics = candidate_metrics.merge(hnd_performance_metric, on='participant_id')
+
+    # Save the candidate metrics
+    candidate_metrics.sort_values('participant_id').to_csv(candidate_metrics_path, sep='\t', index=False)
+
+# Exclude if mean FD > 0.2, rank remaining by rank-sum of SD(DVARS) (ascending) and HND accuracy (descending)
+candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
+        .assign(sd_dvars_rank = lambda x: x['sd_dvars'].rank(ascending=True),
+                hnd_accuracy_rank = lambda x: x['hnd_accuracy'].rank(ascending=False))
+        .assign(rank_sum = lambda x: x['sd_dvars_rank'] + x['hnd_accuracy_rank'])
+        .sort_values('rank_sum')
+        .set_index('participant_id')
+        .rename_axis('Participant ID')
+        .rename(columns = {'mean_fd':'Mean FD', 'sd_dvars':'Max SD(DVARS)', 'hnd_accuracy':'HND Accuracy %'}))
+# Display the best 2 and worst 2 candidates per rank_sum
+best_worst_candidates = pd.concat([candidate_metrics.head(2), candidate_metrics.tail(2)])
+best_worst_candidates[['Mean FD', 'Max SD(DVARS)', 'HND Accuracy %']]
+```
+
+### Preprocessing
+
+```{=html}
+<details class="code-fold"><summary>Extract, convert, and preprocess subject 26</summary>
+```
+
+```{bash}
+#| label: fmriprep-run
+#| eval: false
+
+SUB=26
+DATA=../../data/scene-areas-hierarchy-rsa
+# fMRIPrep's per-subject HTML report to check completion
+FMRIPREP_REPORT="$DATA/derivatives/sub-${SUB}.html"
+
+# Run fMRIPrep only if preprocessed data not already present
+if [ ! -f "$FMRIPREP_REPORT" ]; then
+  # Extract raw DICOM zip
+  mkdir -p "$DATA/extracted/subject_${SUB}"
+  unzip -n "$DATA/raw_fmri/MRI_Scanning_sub${SUB}.zip" -d "$DATA/extracted/subject_${SUB}"
+
+  # DICOM to Nifti conversion done for all bold runs
+  mkdir -p "$DATA/bids/sub-${SUB}/func" "$DATA/bids/sub-${SUB}/anat"
+  for run in 1 2 3 4; do
+    dcm2niix -z y -f "sub-${SUB}_task-sm_run-${run}_bold" \
+      -o "$DATA/bids/sub-${SUB}/func" \
+      "$DATA/extracted/subject_${SUB}/MRI_Scanning_sub${SUB}/bold_run${run}"
+  done
+  # Do the same for the T1w image
+  dcm2niix -z y -f "sub-${SUB}_T1w" \
+    -o "$DATA/bids/sub-${SUB}/anat" \
+    "$DATA/extracted/subject_${SUB}/MRI_Scanning_sub${SUB}/t1"
+
+  # Run fMRIPrep on the extracted and converted BIDS data for Subject 26 to get the preprocessed data
+  docker run --rm \
+    -v "$DATA/bids:/data:ro" \
+    -v "$DATA/derivatives:/out" \
+    -v "$DATA/license.txt:/opt/freesurfer/license.txt:ro" \
+    nipreps/fmriprep:25.2.0 \
+    /data /out participant \
+    --participant-label "$SUB" \
+    --fs-license-file /opt/freesurfer/license.txt \
+    --nprocs 8 \
+    --omp-nthreads 4 \
+    --mem-mb 16000
+fi
+```
+
+```{=html}
+</details>
+```
+
+Subject `26`'s raw DICOM data was extracted, converted to NIfTI (using `dcm2niix`[@Li_2016]), and organized into BIDS format. The resulting BIDS dataset was then preprocessed using `fMRIPrep`[@Esteban_2019] with FreeSurfer surface reconstruction[@Dale_1999; @Fischl_2000; @Fischl_2002; @Segonne_2004]. The following are used for single subject analysis:
+
+- *per-run confound timeseries*: framewise displacement and DVARS as a sanity check against the raw-data estimates used for subject selection, 6 motion parameters (translations/rotations) as additional regressors for GLM model.
+- *preprocessed BOLD timeseries*: As the effect size for the GLM model.
+- The per-run brain mask, for the GLM.
+- The native-surface FreeSurfer output (`sphere.reg` and its fsaverage correspondence) to bring the ROI atlases into subject space.
 
 
 ## Behavioral State

@@ -230,20 +230,12 @@ visf_new_array[np.isin(visf_ants.numpy(), v2_labels)] = 2
 # Update the ants object with other areas excluded
 visf_visual_ants = visf_ants.new_image_like(visf_new_array)
 
-# Define the candidate selection logic
-# 1. Exluded if ROI tSNR < 30
-# 2. Remaining ranked by minimum mean FD
-# 3. Ties broken by DVARS
-
-# Named ROI labels for each atlas, matches the integer labels assigned above
-visf_roi_names = {1: 'v1', 2: 'v2'}
-scene_roi_names = {1: 'ppa', 2: 'rsc', 3: 'opa'}
-
-# Get the MNI152NLin6Asym from TemplateFlow
-t1_path = tflow.get('MNI152NLin6Asym', resolution=1, suffix='T1w', desc = None)
-# Convert to ANTs format
-mni_template_ants = image_read(str(t1_path))
-
+# # Candidate selection logic
+# # 1. Excluded if mean Frame Displacement (FD) > 0.2
+# # 2. Remaining ranked using a rank-sum approach based on:
+# #    - Standard deviation of the frame-to-frame DVARS profile (penalizes sudden spikes)
+# #    - HND trial performance (secondary task engagement)
+# bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
 # subject_rows = []
 # # Loop over each subject
 # for sub in subject_list:
@@ -275,33 +267,11 @@ mni_template_ants = image_read(str(t1_path))
 
 #         # Compute the mean frame and convert to ANTs format
 #         mean_frame_ants = from_numpy(running_sum/len(run_files), spacing = (2, 2, 2.3))
-#         # Register the mean frame to MNI152NLin6Asym
-#         ants_res = registration(fixed = mni_template_ants, moving = mean_frame_ants, type_of_transform = 'Affine')
-
-#         # Transform both maps onto subject MNI space
-#         visf_subject_ants = apply_transforms(fixed = mean_frame_ants,
-#                                                 moving = visf_visual_ants,
-#                                                 transformlist = ants_res['fwdtransforms'],
-#                                                 whichtoinvert = [True],
-#                                                 interpolator='nearestNeighbor')
-#         scene_subject_ants = apply_transforms(fixed = mean_frame_ants,
-#                                                 moving = scene_ants,
-#                                                 transformlist = ants_res['fwdtransforms'],
-#                                                 whichtoinvert = [True],
-#                                                 interpolator='nearestNeighbor')
 
 #         # Compute the motion correction metrics on the BOLD run
 #         bold_4d = list_to_ndimage(make_image((*bold_ants_list[0].shape, len(bold_ants_list)), pixeltype='unsigned int',
 #                                                 origin = (*bold_ants_list[0].origin, 0)),
 #                                     bold_ants_list)
-#         # Compute mean and std across time axis
-#         with np.errstate(invalid = 'ignore'):
-#             tSNR_3d = bold_4d.numpy().mean(axis = 3) / bold_4d.numpy().std(axis = 3)
-
-#         # Compute the ROI tSNR for V1/V2 and scene areas, keyed by ROI name
-#         visf_tsnr = ndimage.mean(tSNR_3d, visf_subject_ants.numpy(), index = list(visf_roi_names.keys()))
-#         scene_tsnr = ndimage.mean(tSNR_3d, scene_subject_ants.numpy(), index = list(scene_roi_names.keys()))
-#         run_tsnr = dict(zip(visf_roi_names.values(), visf_tsnr)) | dict(zip(scene_roi_names.values(), scene_tsnr))
 
 #         # Mean FD Computation - Only using evenly spaced 50 frames
 #         frame_fd_running_sum = 0
@@ -334,42 +304,50 @@ mni_template_ants = image_read(str(t1_path))
 #         frame_diff = np.diff(mode1000_signal, axis = -1)
 #         # Compute the RMS across all brain voxels
 #         rms = np.sqrt(np.mean(frame_diff**2, axis = 0))
-#         # Compute the median RMS across the whole run
-#         run_median_dvars = np.median(rms)
+#         # Compute the standard deviation of frame-to-frame DVARS across the whole run
+#         run_sd_dvars = np.std(rms)
 
 #         # Collect this run's metrics
-#         run_metrics.append(run_tsnr | {'mean_fd': run_mean_fd, 'median_dvars': run_median_dvars})
+#         run_metrics.append({'mean_fd': run_mean_fd, 'sd_dvars': run_sd_dvars})
 
-#     # Average each metric across this subject's 4 runs
-#     subject_row = pd.DataFrame(run_metrics).mean().to_dict()
+#     # Average mean FD and max SD(DVARS) across this subject's 4 runs
+#     run_metrics_df = pd.DataFrame(run_metrics)
+#     subject_row = {'mean_fd': run_metrics_df['mean_fd'].mean(), 'sd_dvars': run_metrics_df['sd_dvars'].max()}
 #     subject_row['participant_id'] = sub
 #     subject_rows.append(subject_row)
-# # The loop should take around 64 minutes
 # # Collate results into one DataFrame, one row per subject
 # candidate_metrics = pd.DataFrame(subject_rows)
 # # Rearrange the columns so participant_id is the first column
 # participant_ids = candidate_metrics.pop('participant_id')
 # candidate_metrics.insert(0, 'participant_id', participant_ids)
 
+# # Compute HND task accuracy per subject from the behavioral rawdata files
+# hnd_rows = []
+# for sub in subject_list:
+#     filepath = f'fMRI_behavior/sub_{sub}_formal_rawdata.txt'
+#     hnd_col = pd.read_table(behavior_zip_file.open(filepath), header=None, encoding='latin1')[5].str.strip()
+#     hnd_trials = hnd_col[hnd_col.isin(['Correct', 'Incorrect'])]
+#     hnd_rows.append({'participant_id': sub, 'hnd_accuracy': (hnd_trials == 'Correct').mean()})
+# hnd_performance = pd.DataFrame(hnd_rows)
+
+# # Merge HND accuracy into the candidate metrics
+# candidate_metrics = candidate_metrics.merge(hnd_performance, on='participant_id')
+
 # # Save the candidate metrics
-candidate_selection_path = data_path / "derivatives" / "candidate_selection"
+# candidate_selection_path = data_path / "derivatives" / "candidate_selection"
 # candidate_selection_path.mkdir(parents=True, exist_ok=True)
 # candidate_metrics.sort_values('participant_id').to_csv(candidate_selection_path / "candidate_metrics.tsv", sep='\t', index=False)
 
 # Load and explore the candidate metrics
 candidate_metrics = pd.read_table(candidate_selection_path / "candidate_metrics.tsv")
-# Check if any subject has all ROI with tSNR > 30
-candidate_metrics.query('ppa > 30 and rsc > 30 and opa > 30 and v1 > 30 and v2 > 30')
-# None, so switching to using the same logic as Noda post, the weakest-link ranking
-# But now the FD serves as the gate and rest of the metrics are used for weakest-link ranking
-# So the new logic is:
 # 1. Exclude if mean FD > 0.2
-# 2. Remaining ranked by weakest-link tSNR, i.e. the minimum tSNR across all ROIs
+# 2. Rank remaining using a rank-sum of SD(DVARS) (ascending - lower is more stable)
+#    and HND accuracy (descending - higher is better task engagement)
 candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
-        .assign(min_tsnr = lambda x: x[['ppa', 'rsc', 'opa', 'v1', 'v2']].min(axis=1))
-        .sort_values(['min_tsnr', 'median_dvars'], ascending=[False, True]))
-# Subject 15 is the clear winner having high tSNR for all ROIs, DVARS sits somwhere in the middle of the pack
-# Next on the list, Subject 12 has lower median DVARS but tSNR is lower for all ROIs
+        .assign(sd_dvars_rank = lambda x: x['sd_dvars'].rank(ascending=True),
+                hnd_accuracy_rank = lambda x: x['hnd_accuracy'].rank(ascending=False))
+        .assign(rank_sum = lambda x: x['sd_dvars_rank'] + x['hnd_accuracy_rank'])
+        .sort_values('rank_sum'))
 
 # # Extract the fMRI data and load Subject 15 data
 # path_to_zip = raw_data_path / "MRI_Scanning_sub15.zip"
