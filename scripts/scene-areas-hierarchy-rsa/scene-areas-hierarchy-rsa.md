@@ -1,47 +1,82 @@
----
-title: Undecided
-jupyter: fmri
-format: gfm
----
+# Undecided
 
-This post implements a representational similarity analysis of scene-selective visual areas using human fMRI data in order to answer the following question: [[Landscape/@Epstein_2019/@Epstein_2019 | Can the relationship between low-level features and the higher-level scene information and the hierarchical nature of scene-selective areas be demonstrated using RSA?]].  
+
+This post implements a representational similarity analysis of
+scene-selective visual areas using human fMRI data in order to answer
+the following question: \[\[Landscape/@Epstein_2019/@Epstein_2019 \| Can
+the relationship between low-level features and the higher-level scene
+information and the hierarchical nature of scene-selective areas be
+demonstrated using RSA?\]\].
 
 ## Stimulus Description
+
 ### Experimental Setup
-The raw data came from [A dataset of human fMRI/MEG experiments with eye tracking for spatial memory research using virtual reality](https://doi.org/10.1016/j.dib.2022.108380)[@Zhang_2022]. Participants performed a spatial memory (SM) task where a first-person perpective 3D Unity Engine (Unity Technologies, San Francisco) game video was displayed on a LCD monitor. Each trial was divided into three sequential periods:  
 
-- **Walking period**(6.0 s): Walking motion from the boundary of a circular environment towards the center where three human characters (3D models from [Mixamo, San Francisco](https://www.mixamo.com)) are arranged pseudorandomly at three adjacent vertices of a square. The direction of approach corresponds to the 4 sides of the square.
-- **Facing period**(2.0 s): The camera centers on a cue character to convey the orientation with respect to the spatial environment.
-- **Targeting period**(2.0 s): The screen displayed a target character in a pixelated noise background, simulating the target's location relative to the participant's position.
-- **Choice period**: Participants indicated the target's location relative to the simulated orientation of the participant (facing period) with a self-paced key press (left, right, or back). The choices were displayed against a blank background.
+The raw data came from [A dataset of human fMRI/MEG experiments with eye
+tracking for spatial memory research using virtual
+reality](https://doi.org/10.1016/j.dib.2022.108380)\[@Zhang_2022\].
+Participants performed a spatial memory (SM) task where a first-person
+perpective 3D Unity Engine (Unity Technologies, San Francisco) game
+video was displayed on a LCD monitor. Each trial was divided into three
+sequential periods:
 
-The periods were interspersed with the same pixelated noise screen used during the targeting period each 2.0 seconds long. During the inter-trial period(3.0 - 7.0 s) the same blank background as the choice period was shown on the screen. The participants were required to pay attention to the heads of the human characters because there was a 20.6% probability for a character to nod their head at any random time point during the walking period. Such trials are identified as head-nodding detection (HND) trials, which served a dual purpose: draw attention away from spatial layout and performance measurement.  
-The following analysis excludes the choice period which relies on memory and the HND trials which only contained the walking period.
+- **Walking period**(6.0 s): Walking motion from the boundary of a
+  circular environment towards the center where three human characters
+  (3D models from [Mixamo, San Francisco](https://www.mixamo.com)) are
+  arranged pseudorandomly at three adjacent vertices of a square. The
+  direction of approach corresponds to the 4 sides of the square.
+- **Facing period**(2.0 s): The camera centers on a cue character to
+  convey the orientation with respect to the spatial environment.
+- **Targeting period**(2.0 s): The screen displayed a target character
+  in a pixelated noise background, simulating the target’s location
+  relative to the participant’s position.
+- **Choice period**: Participants indicated the target’s location
+  relative to the simulated orientation of the participant (facing
+  period) with a self-paced key press (left, right, or back). The
+  choices were displayed against a blank background.
 
-**Ethological significance**: The three periods which are included involve active encoding of the spatial layout with each successive period adding more context. The first-person virtual environment is more ethologically relevant than static image viewing, though the the non-immersive nature of the monitor presentation limits how naturalistic the visual input is relative to real-world spatial perception.  
+The periods were interspersed with the same pixelated noise screen used
+during the targeting period each 2.0 seconds long. During the
+inter-trial period(3.0 - 7.0 s) the same blank background as the choice
+period was shown on the screen. The participants were required to pay
+attention to the heads of the human characters because there was a 20.6%
+probability for a character to nod their head at any random time point
+during the walking period. Such trials are identified as head-nodding
+detection (HND) trials, which served a dual purpose: draw attention away
+from spatial layout and performance measurement.  
+The following analysis excludes the choice period which relies on memory
+and the HND trials which only contained the walking period.
 
-**Brain areas**: The brain areas analyzed were:  
+**Ethological significance**: The three periods which are included
+involve active encoding of the spatial layout with each successive
+period adding more context. The first-person virtual environment is more
+ethologically relevant than static image viewing, though the the
+non-immersive nature of the monitor presentation limits how naturalistic
+the visual input is relative to real-world spatial perception.
+
+**Brain areas**: The brain areas analyzed were:
 
 - *Primary/Secondary Visual Cortex*:
-    - *V1*: V1d, V1v
-    - *V2*: V2d, V2v
+  - *V1*: V1d, V1v
+  - *V2*: V2d, V2v
 - *Scene-Selective Areas*:
-    - *Parahippocampal Place Area*: PPA
-    - *Occipital Place Area*: OPA
-    - *Medial Place Area/Retrosplenial Complex*: MPA/RSC
+  - *Parahippocampal Place Area*: PPA
+  - *Occipital Place Area*: OPA
+  - *Medial Place Area/Retrosplenial Complex*: MPA/RSC
 
-These areas span the low-level to high-level feature hierarchy for scene perception.  
+These areas span the low-level to high-level feature hierarchy for scene
+perception.
 
-**Context of the recorded activity**: Each participant went through four scanning sessions lasting ~70 minutes. All trials/runs were recorded under similar conditions of passive viewing and the same recording paradigm (SM/HND tasks) which reduces the effect of global brain states. Eye tracking using pupil position and size were also recorded to serve as behavioral markers.  
+**Context of the recorded activity**: Each participant went through four
+scanning sessions lasting ~70 minutes. All trials/runs were recorded
+under similar conditions of passive viewing and the same recording
+paradigm (SM/HND tasks) which reduces the effect of global brain states.
+Eye tracking using pupil position and size were also recorded to serve
+as behavioral markers.
 
-```{=html}
 <details class="code-fold"><summary>Download raw fMRI data</summary>
-```
 
-```{python}
-#| label: download-data
-#| eval: false
-
+``` python
 %%bash
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
@@ -50,15 +85,12 @@ aria2c -c -x 16 -s 16 -k 1M --content-disposition \
   -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
 ```
 
-```{=html}
 </details>
-```
 
-```{python}
-#| code-fold: true
-#| code-summary: "Imports"
-#| label: imports
+<details class="code-fold">
+<summary>Imports</summary>
 
+``` python
 from pathlib import Path
 import zipfile
 import io
@@ -91,51 +123,75 @@ data_slug = current_dir.name
 data_path = current_dir.parents[1] / "data" / data_slug
 ```
 
+</details>
+
 ## Data Structure
+
 ### Raw Data Structure
 
-The raw data[@Zhang_2022] is structured as follows:  
+The raw data\[@Zhang_2022\] is structured as follows:
 
 **MRI scans**
 
 | **Scan** | **Naming** | **Format** | **Voxel size** | **TR** | **x $\times$ y $\times$ slices** | **Volumes** |
-| -------- | ---------- | ---------- | --------------- | ------ | ------------------------------- | ----------- |
+|----|----|----|----|----|----|----|
 | *Functional BOLD* | `MRI_Scanning_sub{8-26}.zip` | DICOM | `2` $\times$ `2` $\times$ `2.3` mm | `2.0` s | `112` $\times$ `112` $\times$ `62` | ~ `460-514` |
 | *Anatomical T1w* | `MRI_Scanning_sub{8-26}.zip` | DICOM | `1` $\times$ `0.5` $\times$ `0.5` mm | — | `192` $\times$ `448` $\times$ `512` | — |
 
 **Behavioral files**
 
 | **File** | **Naming** | **Organization** |
-| -------- | ---------- | ----------------- |
+|----|----|----|
 | *Trial conditions* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_rawdata.txt` | `160` rows: `40` trials/run $\times$ `4` runs |
 | *Trial timings* | `fMRI_behavior.zip/fMRI_behavior/sub_{8-26}_formal_Time_record_t.txt` | `160` rows: `40` trials/run $\times$ `4` runs |
 | *Eye tracking* | `fMRI_eyedate.zip/fMRI_eyedate/el_sub{8-26}.edf` | EyeLink proprietary format, excluded |
 
-For the purposes of this analysis, the following columns from the behavioral files are used:  
+For the purposes of this analysis, the following columns from the
+behavioral files are used:
 
 - **Trial conditions**:
-    - *map* (column 2) - 3 out of 6 possible arrangements of the characters at 3 vertices of the square. No stim files are available to signify which 3 maps were psudorandomly chosen for each participant. Nevertheless, this condition is included since it determines categorically determines the spatial layout being simulated.
-    - *walking direction* (column 3) - The approach direction corresponding to the 4 sides of the square. This condition is included because it determines the overall structure of the scene.
-    - *type of trial* (column 5) - Marks SM trials as `NA` and HND trials by the key pressed to answer whether the participant saw the character displayed on the screen nod their head.
-    - *HND trial performance* (column 6) - included as a behavioral metric to be used for participant selection criteria.
+  - *map* (column 2) - 3 out of 6 possible arrangements of the
+    characters at 3 vertices of the square. No stim files are available
+    to signify which 3 maps were psudorandomly chosen for each
+    participant. Nevertheless, this condition is included since it
+    determines categorically determines the spatial layout being
+    simulated.
+  - *walking direction* (column 3) - The approach direction
+    corresponding to the 4 sides of the square. This condition is
+    included because it determines the overall structure of the scene.
+  - *type of trial* (column 5) - Marks SM trials as `NA` and HND trials
+    by the key pressed to answer whether the participant saw the
+    character displayed on the screen nod their head.
+  - *HND trial performance* (column 6) - included as a behavioral metric
+    to be used for participant selection criteria.
 - **Trial timings**:
-    - *onset of walking period* (column 5) - corresponds to the beginning of trial for our analysis.
-    - *onset of response cue* (column 11) - corresponds to the end of the trial for our analysis. The inter-stimulus interval (ISI) before the choice period is included due to the inherent slowness of blood movement as compared to electrical activity.
+  - *onset of walking period* (column 5) - corresponds to the beginning
+    of trial for our analysis.
+  - *onset of response cue* (column 11) - corresponds to the end of the
+    trial for our analysis. The inter-stimulus interval (ISI) before the
+    choice period is included due to the inherent slowness of blood
+    movement as compared to electrical activity.
 
 ### Cohort Size & Participant Selection
 
-There are `19` participants in total. The ideal cohort size for a representational map estimation is 1 if sufficient number of neurons/voxels are recorded[@Noda_2024-03-22]. The following algorithm is to be used to rank each participant:  
+There are `19` participants in total. The ideal cohort size for a
+representational map estimation is 1 if sufficient number of
+neurons/voxels are recorded\[@Noda_2024-03-22\]. The following algorithm
+is to be used to rank each participant:
 
-- Exclude if mean **Frame Displacement** (FD) > 0.2;
-- Rank remaining using a rank-sum approach based on the **maximum standard deviation of the frame-to-frame DVARS[@Power_2012] profile across runs** (penalizes sudden spikes) and **HND trial performance** (secondary task engagement)
+- Exclude if mean **Frame Displacement** (FD) \> 0.2;
+- Rank remaining using a rank-sum approach based on the **maximum
+  standard deviation of the frame-to-frame DVARS\[@Power_2012\] profile
+  across runs** (penalizes sudden spikes) and **HND trial performance**
+  (secondary task engagement)
 
-The two best and worst candidates with their corresponding metrics and ranks are as follows:  
+The two best and worst candidates with their corresponding metrics and
+ranks are as follows:
 
-```{python}
-#| code-fold: true
-#| code-summary: "Candidate selection"
-#| label: candidate-selection
+<details class="code-fold">
+<summary>Candidate selection</summary>
 
+``` python
 # Define path to raw data folder where files were downloaded
 raw_data_path = data_path / "raw_fmri"
 
@@ -278,16 +334,36 @@ best_worst_candidates = pd.concat([candidate_metrics.head(2), candidate_metrics.
 best_worst_candidates[['Mean FD', 'Max SD(DVARS)', 'HND Accuracy %']]
 ```
 
+</details>
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+&#10;    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+&#10;    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+
+|                | Mean FD  | Max SD(DVARS) | HND Accuracy % |
+|----------------|----------|---------------|----------------|
+| Participant ID |          |               |                |
+| 26             | 0.076309 | 2.207112      | 100.00         |
+| 22             | 0.096302 | 1.529582      | 87.50          |
+| 17             | 0.125589 | 14.588543     | 81.25          |
+| 10             | 0.058542 | 5.379697      | 43.75          |
+
+</div>
+
 ### Preprocessing
 
-```{=html}
 <details class="code-fold"><summary>Preprocessing of participant 26 data</summary>
-```
 
-```{python}
-#| label: fmriprep-run
-#| eval: false
-
+``` python
 %%bash
 
 SUB=26
@@ -328,19 +404,20 @@ if [ ! -f "$FMRIPREP_REPORT" ]; then
 fi
 ```
 
-```{=html}
 </details>
-```
 
-Participant `26`'s raw DICOM data was extracted, converted to NIfTI (using `dcm2niix`[@Li_2016]), and organized into BIDS format[@Gorgolewski_2016]. The resulting BIDS dataset was then preprocessed using `fMRIPrep`[@Esteban_2019] with FreeSurfer surface reconstruction[@Dale_1999; @Fischl_2000; @Fischl_2002; @Segonne_2004].  
+Participant `26`’s raw DICOM data was extracted, converted to NIfTI
+(using `dcm2niix`\[@Li_2016\]), and organized into BIDS
+format\[@Gorgolewski_2016\]. The resulting BIDS dataset was then
+preprocessed using `fMRIPrep`\[@Esteban_2019\] with FreeSurfer surface
+reconstruction\[@Dale_1999; @Fischl_2000; @Fischl_2002; @Segonne_2004\].
 
 ### ROI Atlases
 
-```{python}
-#| code-fold: true
-#| code-summary: "Download atlases"
-#| label: download-atlases
+<details class="code-fold">
+<summary>Download atlases</summary>
 
+``` python
 # visfAtlas download
 visf_atlas_path = data_path / "atlases" / "visfAtlas" / "FreeSurfer"
 visf_atlas_path.mkdir(parents=True, exist_ok=True)
@@ -376,20 +453,24 @@ if not all((steel_atlas_path / file_name).exists() for file_name in steel_files)
         (steel_atlas_path / file_name).write_bytes(file_bytes)
 ```
 
-The visfAtlas[@Rosenke_2021] is a probabilistic atlas of human occipito-temporal visual cortex. I will be using the FreeSurfer label files for bilateral primary and secondary visual areas: **V1v**, **V1d**, **V2v**, **V2d**.  
+</details>
 
-The [Place memory parcels and localizer](https://osf.io/xmhn7/)[@Steel_2024] provides probabilistic parcels for bilateral **OPA**, **PPA**, and **MPA/RSC**.  
+The visfAtlas\[@Rosenke_2021\] is a probabilistic atlas of human
+occipito-temporal visual cortex. I will be using the FreeSurfer label
+files for bilateral primary and secondary visual areas: **V1v**,
+**V1d**, **V2v**, **V2d**.
 
-Thus in total 14 ROIs (7 in each hemisphere) are selected so as to form a hypethetical pathway starting from V1 to V2 to one of the scene-selective areas.  
+The [Place memory parcels and
+localizer](https://osf.io/xmhn7/)\[@Steel_2024\] provides probabilistic
+parcels for bilateral **OPA**, **PPA**, and **MPA/RSC**.
 
-```{=html}
+Thus in total 14 ROIs (7 in each hemisphere) are selected so as to form
+a hypethetical pathway starting from V1 to V2 to one of the
+scene-selective areas.
+
 <details class="code-fold"><summary>Prepare ROI masks in participant 26's native space</summary>
-```
 
-```{python}
-#| label: prepare-roi-masks
-#| eval: false
-
+``` python
 %%bash
 
 SUB=26
@@ -466,19 +547,23 @@ for hemi in lh rh; do
 done
 ```
 
-```{=html}
 </details>
-```
 
-Both atlases were resampled onto participant `26`'s white matter surface then reduced to the top `800` spatially contiguous vertices per region based on probability measure. This ensures all areas occupy almost similar amount of voxels. Volumetric masks were built from these surface meshes with a spatial density filter of `30%`. The basic process involves sampling at 10% intervals while walking from the gray-white matter boundary to the pial surface. Any voxel which contains < 0.3 samples in it is excluded.  
+Both atlases were resampled onto participant `26`’s white matter surface
+then reduced to the top `800` spatially contiguous vertices per region
+based on probability measure. This ensures all areas occupy almost
+similar amount of voxels. Volumetric masks were built from these surface
+meshes with a spatial density filter of `30%`. The basic process
+involves sampling at 10% intervals while walking from the gray-white
+matter boundary to the pial surface. Any voxel which contains \< 0.3
+samples in it is excluded.
 
 ## High-Dimensional Population Response Space
 
-```{python}
-#| code-fold: true
-#| code-summary: "Build RDM using GLM effect sizes"
-#| label: build-rdm
+<details class="code-fold">
+<summary>Build RDM using GLM effect sizes</summary>
 
+``` python
 SUB = 26
 preprocessed_path = data_path / "derivatives" / f"sub-{SUB}"
 
@@ -662,15 +747,30 @@ else:
         pickle.dump((condition_rdm_objects, roi_voxel_counts, roi_betas_data, roi_residual_data, beta_meta), f)
 ```
 
-A condition-level GLM was fit per run, with one regressor per map $\times$ walking-direction combination. The 6 base motion parameters (3 for translations, 3 for rotations) were used as additional regressors for the model. This yielded one effect-size ($\beta$) 4D volume per condition per run, which is masked into each of the ROIs. Any voxel with a median absolute deviation (MAD) z-score > 3.5 is excluded from a ROI, to avoid any domination of signal by outliers.  
+</details>
 
-The resulting per-run $\beta$ patterns are converted into a representational dissimilarity matrix (RDM) using crossnobis distance from `rsatoolbox`[@Bosch_2025]. GLM residuals were supplied for noise normalization. A crosswise single-trial correlation approach which allows the diagonal of the matrix to serve as a trial-to-trial reliability measure[@Noda_2024-03-22] was not implemented due to the inherent low SNR of fMRI BOLD signal. The crossnobis approach serves a similar purpose by using cross-validation folds across runs ie. the estimates are no longer biased by noise within each run.  
+A condition-level GLM was fit per run, with one regressor per map
+$\times$ walking-direction combination. The 6 base motion parameters (3
+for translations, 3 for rotations) were used as additional regressors
+for the model. This yielded one effect-size ($\beta$) 4D volume per
+condition per run, which is masked into each of the ROIs. Any voxel with
+a median absolute deviation (MAD) z-score \> 3.5 is excluded from a ROI,
+to avoid any domination of signal by outliers.
 
-```{python}
-#| code-fold: true
-#| label: fig-rdm-heatmaps
-#| fig-cap: "**ROI-wise RDM** for participant 26: *Walking direction forms the large blocks, map forms the small blocks within each. Brackets show number of voxels in each area*"
+The resulting per-run $\beta$ patterns are converted into a
+representational dissimilarity matrix (RDM) using crossnobis distance
+from `rsatoolbox`\[@Bosch_2025\]. GLM residuals were supplied for noise
+normalization. A crosswise single-trial correlation approach which
+allows the diagonal of the matrix to serve as a trial-to-trial
+reliability measure\[@Noda_2024-03-22\] was not implemented due to the
+inherent low SNR of fMRI BOLD signal. The crossnobis approach serves a
+similar purpose by using cross-validation folds across runs ie. the
+estimates are no longer biased by noise within each run.
 
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
 # Display the full 12x12 map x direction ROI RDMs, left ROIs on top, right below
 # Walking direction forms the big blocks, map forms the small blocks within each
 direction_major_order = [f'{map_id}_{direction_id}'
@@ -730,28 +830,72 @@ fig.text(1.01, 0.5, 'Crossnobis distance', fontsize=25, rotation=90, va='center'
 plt.show();
 ```
 
+</details>
+
+<div id="fig-rdm-heatmaps">
+
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-rdm-heatmaps-output-1.png)
+
+Figure 1: **ROI-wise RDM** for participant 26: *Walking direction forms
+the large blocks, map forms the small blocks within each. Brackets show
+number of voxels in each area*
+
+</div>
+
 ### RDM Patterns
 
-All areas have a similar amount of voxels except for right OPA. The large drop from 800 voxels occured when the areas were transformed into subject-native MNI152 space. The MAD exclusion was modest but caught true outliers.  
+All areas have a similar amount of voxels except for right OPA. The
+large drop from 800 voxels occured when the areas were transformed into
+subject-native MNI152 space. The MAD exclusion was modest but caught
+true outliers.
 
 - **Left hemisphere**:
-    - **V1d, V1v**: The dissimalarity between direction 3 and directions 1, 2 is the highest across all areas. This suggests some kind of low-level feature is being encoded which might be used to simulate direction 3.
-    - **V2d, V2v**: V2d has a highly dissimilar map $\times$ direction combination is seen as a long striped pattern crossing direction boundaries. This suggests selectivity for visual features that recur across conditions. V2v is flat with no clear structure visible.
-    - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no distinct block structure is visible. There maybe some structure in MPA for direction 1 vs. other directions but the distinction is weak.
+  - **V1d, V1v**: The dissimalarity between direction 3 and directions
+    1, 2 is the highest across all areas. This suggests some kind of
+    low-level feature is being encoded which might be used to simulate
+    direction 3.
+  - **V2d, V2v**: V2d has a highly dissimilar map $\times$ direction
+    combination is seen as a long striped pattern crossing direction
+    boundaries. This suggests selectivity for visual features that recur
+    across conditions. V2v is flat with no clear structure visible.
+  - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no
+    distinct block structure is visible. There maybe some structure in
+    MPA for direction 1 vs. other directions but the distinction is
+    weak.
 - **Right hemisphere**:
-    - **V1d, V1v**: The dissimalarity between directions 3, 4 and directions 1, 2 is clear. This loosely matches the structure seen in the corresponding left hemisphere. In both hemispheres the ventral area structure is more distinct as compared to dorsal which is interesting since the retinotopic maps of ventral areas cover the upper visual fields, but the characters were arranged on the ground, mostly in the lower visual field.
-    - **V2d, V2v**: V2d shows greater dissimalrity between direction 3 and direction 4 but not for all map conditions. V2v shows a similar structure for direction 1 against all 3 directions. This is difficult to interpret since the stim files which could show the exact arrangement of characters is not available. All three characters had different color & style of clothes.
-    - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no distinct block structure is visible. OPA shows one highly dissimilar map(2) $\times$ direction(2 vs. 3) combination but rest of the structure is near flat.
+  - **V1d, V1v**: The dissimalarity between directions 3, 4 and
+    directions 1, 2 is clear. This loosely matches the structure seen in
+    the corresponding left hemisphere. In both hemispheres the ventral
+    area structure is more distinct as compared to dorsal which is
+    interesting since the retinotopic maps of ventral areas cover the
+    upper visual fields, but the characters were arranged on the ground,
+    mostly in the lower visual field.
+  - **V2d, V2v**: V2d shows greater dissimalrity between direction 3 and
+    direction 4 but not for all map conditions. V2v shows a similar
+    structure for direction 1 against all 3 directions. This is
+    difficult to interpret since the stim files which could show the
+    exact arrangement of characters is not available. All three
+    characters had different color & style of clothes.
+  - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no
+    distinct block structure is visible. OPA shows one highly dissimilar
+    map(2) $\times$ direction(2 vs. 3) combination but rest of the
+    structure is near flat.
 
-The textured overall structure is present as expected for primary and secondary areas, but the flat heatmaps of the scene-selective areas are contradictory to their function in scene processing[@Epstein_2019]. The low values of crossnobis distance are expected given the categorical nature of the trial conditions and the one subject data. A robustness check using permutations with shuffled data across conditions is needed to confirm absence of any noise contribution. The chances of noise are low due to the inherent way crossnobis is computed.  
+The textured overall structure is present as expected for primary and
+secondary areas, but the flat heatmaps of the scene-selective areas are
+contradictory to their function in scene processing\[@Epstein_2019\].
+The low values of crossnobis distance are expected given the categorical
+nature of the trial conditions and the one subject data. A robustness
+check using permutations with shuffled data across conditions is needed
+to confirm absence of any noise contribution. The chances of noise are
+low due to the inherent way crossnobis is computed.
 
 ## RDM Robustness Check
 
-```{python}
-#| code-fold: true
-#| code-summary: "Permutation test against a shuffled-label null"
-#| label: rdm-permutation-test
+<details class="code-fold">
+<summary>Permutation test against a shuffled-label null</summary>
 
+``` python
 perm_cache_path = preprocessed_path / "permutation_results.pkl"
 
 if perm_cache_path.exists():
@@ -805,11 +949,12 @@ else:
         pickle.dump(permutation_df, f)
 ```
 
-```{python}
-#| code-fold: true
-#| label: fig-rdm-permutation
-#| fig-cap: "**RDM Robustness Check**: real mean off-diagonal crossnobis distance (dot) against a label-permuted null distribution (violin) per ROI"
+</details>
 
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
 # Plot each ROI's null distribution of mean distance, against the computed mean distance
 # Define the colors for the null distribution and the computed mean distance
 null_color = '#8a8fa3'
@@ -845,10 +990,22 @@ ax.legend(loc='lower right')
 plt.show();
 ```
 
+</details>
+
+<div id="fig-rdm-permutation">
+
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-rdm-permutation-output-1.png)
+
+Figure 2: **RDM Robustness Check**: real mean off-diagonal crossnobis
+distance (dot) against a label-permuted null distribution (violin) per
+ROI
+
+</div>
+
 ## Visualizing the Representational Map
 
 ## Validation of the Representational Map
 
-## Appendix {#appendix}
+## Appendix
 
 ## References

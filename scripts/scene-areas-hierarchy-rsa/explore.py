@@ -349,40 +349,39 @@ candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
         .assign(rank_sum = lambda x: x['sd_dvars_rank'] + x['hnd_accuracy_rank'])
         .sort_values('rank_sum'))
 
-# # Extract the fMRI data and load Subject 15 data
-# path_to_zip = raw_data_path / "MRI_Scanning_sub15.zip"
+# # Extract the fMRI data and load Subject 26 data
+# path_to_zip = raw_data_path / "MRI_Scanning_sub26.zip"
 # zip_file = zipfile.ZipFile(path_to_zip)
-# extract_path = data_path / "extracted" / "subject_15"
+# extract_path = data_path / "extracted" / "subject_26"
 # zip_file.extractall(extract_path)
 # zip_file.close()
 
 # DCM to Nifti conversion done for all bold runs in a wsl2 terminal using the command below
-# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-15/func
+# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-26/func
 # for run in 1 2 3 4; do
-#   dcm2niix -z y -f "sub-15_task-sm_run-${run}_bold" \
-#     -o data/scene-areas-hierarchy-rsa/bids/sub-15/func \
-#     data/scene-areas-hierarchy-rsa/extracted/subject_15/MRI_Scanning_sub15/bold_run${run}
+#   dcm2niix -z y -f "sub-26_task-sm_run-${run}_bold" \
+#     -o data/scene-areas-hierarchy-rsa/bids/sub-26/func \
+#     data/scene-areas-hierarchy-rsa/extracted/subject_26/MRI_Scanning_sub26/bold_run${run}
 # done
 
 # Do the same for the T1w image
-# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-15/anat
-# dcm2niix -z y -f "sub-15_T1w" \
-#   -o data/scene-areas-hierarchy-rsa/bids/sub-15/anat \
-#   data/scene-areas-hierarchy-rsa/extracted/subject_15/MRI_Scanning_sub15/t1
+# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-26/anat
+# dcm2niix -z y -f "sub-26_T1w" \
+#   -o data/scene-areas-hierarchy-rsa/bids/sub-26/anat \
+#   data/scene-areas-hierarchy-rsa/extracted/subject_26/MRI_Scanning_sub26/t1
 
 # Run fMRIPrep on the extracted and converted BIDS data for Subject 15 to get the preprocessed data
 # docker run --rm \
-#   -v "-absolute path to bids-":/data:ro \
-#   -v "-absolute path to output-":/out \
-#   -v "-absolute path to free surfer license-":/opt/freesurfer/license.txt:ro \
-#   nipreps/fmriprep:25.2.0 \
-#   /data /out participant \
-#   --participant-label 15 \
-#   --fs-license-file /opt/freesurfer/license.txt \
-#   --output-spaces MNI152NLin2009cAsym \
-#   --nprocs 8 \
-#   --omp-nthreads 4 \
-#   --mem-mb 16000
+#     -v "/mnt/-path to bids-":/data:ro \
+#     -v "/mnt/-path to derivatives-":/out \
+#     -v "/mnt/-path to license file-":/opt/freesurfer/license.txt:ro \
+#     nipreps/fmriprep:25.2.0 \
+#     /data /out participant \
+#     --participant-label 26 \
+#     --fs-license-file /opt/freesurfer/license.txt \
+#     --nprocs 8 \
+#     --omp-nthreads 4 \
+#     --mem-mb 16000
 # Ran for 2.5 hours with the above command
 
 # Load the preprocessed fMRI data for Subject 15
