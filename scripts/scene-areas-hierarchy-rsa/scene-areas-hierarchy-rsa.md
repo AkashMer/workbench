@@ -82,6 +82,7 @@ as behavioral markers.
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 aria2c -c -x 16 -s 16 -k 1M --content-disposition \
   -d ../../data/scene-areas-hierarchy-rsa/raw_fmri \
+import rsatoolbox
   -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
 ```
 
@@ -107,7 +108,6 @@ from scipy import ndimage
 from scipy.spatial.transform import Rotation
 from scipy.stats import mode, norm, false_discovery_control
 from scipy.spatial import procrustes
-from scipy.spatial.distance import squareform
 from nilearn.masking import compute_epi_mask, intersect_masks
 from nilearn.glm import first_level
 from nilearn.image import concat_imgs
@@ -116,6 +116,7 @@ import seaborn as sns
 import rsatoolbox
 from sklearn.manifold import MDS
 from sklearn.linear_model import LinearRegression
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # Get the current data-slug for the current folder and the data directory
 current_dir = Path.cwd()
@@ -1242,11 +1243,11 @@ plt.show();
 
 </details>
 
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
 
 <div id="fig-pathway-mds">
@@ -1282,29 +1283,25 @@ along the pathway.
 
 ## Validation of the Representational Map
 
-A representational map needs to be validated against the physical
-structure of the stimulus set or a behavioral/psychophysics
-readout\[@Noda_2024-03-22\]. Neither is available here so V1 is used as
-the low-level-feature model for vision. V1’s population code is well
-characterized as encoding retinotopic position and basic visual features
-(edges, orientation, spatial frequency). Partial RSA regression
-analysis\[@Bosch_2025\] is performed on left OPA’s RDM against left
-V1d’s RDM, left V2d’s RDM & map and walking-direction model RDMs.
+A representational map needs to be validated against physical structure
+of the stimulus set or behavioral/psychophysics
+readout\[@Noda_2024-03-22\]. Neither is available here so V1 and V2 are
+used as low-level-feature extractors for vision. Early visual areas (V1
+and V2) act like simple digital filters, stripping visual stimuli down
+to basic visual features such as edges, textures, orientation and
+spatial frequency\[@Hubel_1962, @Riesenhuber_1999\].  
+Multiple refression RSA (MR-RSA)\[@Bosch_2025\] was performed to control
+for low-level features using *left V1d* and *left V2d* RDMs. This
+allowed me to determine whether direction and map categorical RDMs
+explain unique variance in *left OPA* RDM. The variance inflation factor
+(VIF) for the four predictors were as follows:
 
 <details class="code-fold">
-<summary>Partial RSA Regression Analysis</summary>
+<summary>Code</summary>
 
 ``` python
 # Fixed condition order for every model/neural RDM
 condition_order = list(condition_rdm_objects['lh_v1d'].pattern_descriptors['map_direction'])
-
-# Function which returns the vectorized form of the upper triangle
-def vectorize_rdm(rdm_obj, order):
-    rdm_df = pd.DataFrame(rdm_obj.get_matrices()[0],
-                           index=rdm_obj.pattern_descriptors['map_direction'],
-                           columns=rdm_obj.pattern_descriptors['map_direction'])
-    reordered = rdm_df.loc[order, order].values
-    return squareform(reordered, checks=False)
 
 # Build the 12x12 direction and map model RDMs with directions as primary and map as secondary
 directions_12 = [label.split('_')[1] for label in condition_order]
@@ -1314,40 +1311,122 @@ map_rdm_12 = (np.array(maps_12)[:, None] != np.array(maps_12)[None, :]).astype(i
 direction_vec = direction_rdm_12[np.triu_indices(len(condition_order), k=1)]
 map_vec = map_rdm_12[np.triu_indices(len(condition_order), k=1)]
 
-# Vectorize the V1d, V2d and OPA RDMs
-v1d_vec = vectorize_rdm(condition_rdm_objects['lh_v1d'], condition_order)
-v2d_vec = vectorize_rdm(condition_rdm_objects['lh_v2d'], condition_order)
-opa_vec = vectorize_rdm(condition_rdm_objects['lh_opa'], condition_order)
+# Vectorize the V1d and V2d RDMs
+v1d_vec = condition_rdm_objects['lh_v1d'].get_vectors()[0]
+v2d_vec = condition_rdm_objects['lh_v2d'].get_vectors()[0]
 
 # VIF for each predictor in {V1d, V2d, direction, map} to look for collinearity of factors
 predictors = pd.DataFrame({'v1d': v1d_vec, 'v2d': v2d_vec, 'direction': direction_vec, 'map': map_vec})
-vif_results = {}
-for col in predictors.columns:
-    other_cols = [c for c in predictors.columns if c != col]
-    r_squared = LinearRegression().fit(predictors[other_cols], predictors[col]).score(
-        predictors[other_cols], predictors[col])
-    vif_results[col] = 1 / (1 - r_squared)
-vif_table = pd.Series(vif_results).rename('VIF')
-vif_table
+# Add the intercept column
+predictors_with_const = predictors.assign(const=1.0)
+vif_table = pd.Series(
+    [variance_inflation_factor(predictors_with_const.values, i)
+     for i in range(predictors.shape[1])],
+    index=predictors.columns, name='VIF')
 
-# opa_rdm ~ v1d_rdm + v2d_rdm + direction_rdm + map_rdm
-fit = LinearRegression().fit(predictors, opa_vec)
-regression_results = pd.Series({
-    'v1d_coef': fit.coef_[0],
-    'v2d_coef': fit.coef_[1],
-    'direction_coef': fit.coef_[2],
-    'map_coef': fit.coef_[3],
-})
-regression_results
+# Display VIF with readable predictor names, without touching vif_table itself
+readable_predictor_names = {'v1d': f'Left {region_titles["v1d"]}', 'v2d': f'Left {region_titles["v2d"]}',
+                             'direction': 'Walking direction', 'map': 'Map'}
+(
+    vif_table
+    .rename(readable_predictor_names)
+    .rename_axis(None)
+    .round(2)
+)
 ```
 
 </details>
 
-    v1d_coef         -0.106849
-    v2d_coef          0.131328
-    direction_coef    0.001941
-    map_coef          0.000540
-    dtype: float64
+<div id="tbl-vif">
+
+Table 1
+
+<div class="cell-output cell-output-display" execution_count="50">
+
+    Left V1d             1.16
+    Left V2d             1.07
+    Walking direction    1.22
+    Map                  1.09
+    Name: VIF, dtype: float64
+
+</div>
+
+</div>
+
+Since the above predictors are fairly indipendent, the following two
+models were built:
+
+- **Low-Level Model**: Using left V1d and V2d as predictors
+- **Hierarchical Model**: Using the primary visual areas plus direction
+  and map as predictors
+
+These two models were then compared against *left OPA* representational
+structure using bootstrap method.
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Build the baseline model with only primary visual RDMs
+low_level_model = rsatoolbox.model.ModelWeighted('low_level_features_model',
+                                                    np.vstack([v1d_vec, v2d_vec]))
+
+# Build the full model for the hypothesis
+hierarchical_rsa_model = rsatoolbox.model.ModelWeighted('hierarchical_model',
+                                                        np.vstack([v1d_vec, v2d_vec, direction_vec, map_vec]))
+
+# Compare the low-level and hierarchical models using bootstrap
+results = rsatoolbox.inference.eval_bootstrap_pattern(
+    models = [low_level_model, hierarchical_rsa_model],
+    data = condition_rdm_objects['lh_opa'],
+    N = 1000
+)
+
+# Store the result into a tidy DataFrame
+model_labels = ['Low-Level model\n(V1d + V2d)', 'Hierarchical model\n(+ Direction + Map)']
+bootstrap_df = pd.DataFrame(results.evaluations, columns=model_labels).melt(var_name='Model', value_name='Cosine Similarity')
+
+# Plot the mean cosine similarity per model
+fig, ax = plt.subplots(figsize=(6, 5))
+sns.pointplot(data=bootstrap_df, x='Model', y='Cosine Similarity', hue='Model', palette='colorblind',
+              legend=False, errorbar='sd', capsize=0.2, linestyle='none', ax=ax)
+for i, mean in enumerate(results.get_means()):
+    ax.text(i + 0.05, mean, f'{mean:.3f}', ha='left', va='center', fontsize=9)
+ax.set_ylabel('Mean Cosine Similarity to left OPA RDM')
+ax.set_ylim([0, 1])
+ax.set_xlabel('')
+plt.show();
+```
+
+</details>
+
+
+      0%|          | 0/1000 [00:00<?, ?it/s]
+     10%|█         | 103/1000 [00:00<00:00, 1023.25it/s]
+     22%|██▏       | 220/1000 [00:00<00:00, 1103.76it/s]
+     33%|███▎      | 331/1000 [00:00<00:00, 1066.39it/s]
+     45%|████▍     | 446/1000 [00:00<00:00, 1094.36it/s]
+     56%|█████▌    | 558/1000 [00:00<00:00, 1099.53it/s]
+     68%|██████▊   | 676/1000 [00:00<00:00, 1122.79it/s]
+     79%|███████▉  | 794/1000 [00:00<00:00, 1138.08it/s]
+     91%|█████████ | 908/1000 [00:00<00:00, 1126.94it/s]
+    100%|██████████| 1000/1000 [00:00<00:00, 1105.77it/s]
+
+<div id="fig-mr-rsa">
+
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mr-rsa-output-2.png)
+
+Figure 4: **MR-RSA model comparison**: *RDM prediction accuracy for left
+OPA, low-level vs hierarchical model*
+
+</div>
+
+<a href="#fig-mr-rsa" class="quarto-xref">Figure 4</a> shows the
+hierarchical model scores numerically higher than the low-level model,
+but a pairwise test between the two shows this difference is not
+significant (uncorrected *p* = 0.29). The noise ceiling is omitted here
+since it collapses to a trivial 1.0 for a single-subject RDM, offering
+no real information.
 
 ## Appendix
 
@@ -1380,78 +1459,78 @@ plt.show();
 
 </details>
 
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
-    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
       warnings.warn(
 
 <div id="fig-mds-stress-scree">
 
 ![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mds-stress-scree-output-2.png)
 
-Figure 4: **Normalized MDS stress vs. number of dimensions**: *for each
+Figure 5: **Normalized MDS stress vs. number of dimensions**: *for each
 ROI along the pathway*
 
 </div>

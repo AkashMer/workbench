@@ -47,6 +47,7 @@ These areas span the low-level to high-level feature hierarchy for scene percept
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 aria2c -c -x 16 -s 16 -k 1M --content-disposition \
   -d ../../data/scene-areas-hierarchy-rsa/raw_fmri \
+import rsatoolbox
   -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
 ```
 
@@ -62,6 +63,7 @@ aria2c -c -x 16 -s 16 -k 1M --content-disposition \
 from pathlib import Path
 import zipfile
 import io
+import contextlib
 import pickle
 import requests
 import numpy as np
@@ -75,7 +77,6 @@ from scipy import ndimage
 from scipy.spatial.transform import Rotation
 from scipy.stats import mode, norm, false_discovery_control
 from scipy.spatial import procrustes
-from scipy.spatial.distance import squareform
 from nilearn.masking import compute_epi_mask, intersect_masks
 from nilearn.glm import first_level
 from nilearn.image import concat_imgs
@@ -84,6 +85,7 @@ import seaborn as sns
 import rsatoolbox
 from sklearn.manifold import MDS
 from sklearn.linear_model import LinearRegression
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # Get the current data-slug for the current folder and the data directory
 current_dir = Path.cwd()
@@ -1017,23 +1019,15 @@ The normalized MDS stress stabilizes at around two/three dimensions for the 3 RO
 
 ## Validation of the Representational Map
 
-A representational map needs to be validated against the physical structure of the stimulus set or a behavioral/psychophysics readout[@Noda_2024-03-22]. Neither is available here so V1 is used as the low-level-feature model for vision. V1's population code is well characterized as encoding retinotopic position and basic visual features (edges, orientation, spatial frequency). Partial RSA regression analysis[@Bosch_2025] is performed on left OPA's RDM against left V1d's RDM, left V2d's RDM & map and walking-direction model RDMs.
+A representational map needs to be validated against physical structure of the stimulus set or behavioral/psychophysics readout[@Noda_2024-03-22]. Neither is available here so V1 and V2 are used as low-level-feature extractors for vision. Early visual areas (V1 and V2) act like simple digital filters, stripping visual stimuli down to basic visual features such as edges, textures, orientation and spatial frequency[@Hubel_1962, @Riesenhuber_1999].  
+Multiple refression RSA (MR-RSA)[@Bosch_2025] was performed to control for low-level features using *left V1d* and *left V2d* RDMs. This allowed me to determine whether direction and map categorical RDMs explain unique variance in *left OPA* RDM. The variance inflation factor (VIF) for the four predictors were as follows:
 
 ```{python}
 #| code-fold: true
-#| code-summary: "Partial RSA Regression Analysis"
-#| label: partial-rsa
+#| label: tbl-vif
 
 # Fixed condition order for every model/neural RDM
 condition_order = list(condition_rdm_objects['lh_v1d'].pattern_descriptors['map_direction'])
-
-# Function which returns the vectorized form of the upper triangle
-def vectorize_rdm(rdm_obj, order):
-    rdm_df = pd.DataFrame(rdm_obj.get_matrices()[0],
-                           index=rdm_obj.pattern_descriptors['map_direction'],
-                           columns=rdm_obj.pattern_descriptors['map_direction'])
-    reordered = rdm_df.loc[order, order].values
-    return squareform(reordered, checks=False)
 
 # Build the 12x12 direction and map model RDMs with directions as primary and map as secondary
 directions_12 = [label.split('_')[1] for label in condition_order]
@@ -1043,32 +1037,85 @@ map_rdm_12 = (np.array(maps_12)[:, None] != np.array(maps_12)[None, :]).astype(i
 direction_vec = direction_rdm_12[np.triu_indices(len(condition_order), k=1)]
 map_vec = map_rdm_12[np.triu_indices(len(condition_order), k=1)]
 
-# Vectorize the V1d, V2d and OPA RDMs
-v1d_vec = vectorize_rdm(condition_rdm_objects['lh_v1d'], condition_order)
-v2d_vec = vectorize_rdm(condition_rdm_objects['lh_v2d'], condition_order)
-opa_vec = vectorize_rdm(condition_rdm_objects['lh_opa'], condition_order)
+# Vectorize the V1d and V2d RDMs
+v1d_vec = condition_rdm_objects['lh_v1d'].get_vectors()[0]
+v2d_vec = condition_rdm_objects['lh_v2d'].get_vectors()[0]
 
 # VIF for each predictor in {V1d, V2d, direction, map} to look for collinearity of factors
 predictors = pd.DataFrame({'v1d': v1d_vec, 'v2d': v2d_vec, 'direction': direction_vec, 'map': map_vec})
-vif_results = {}
-for col in predictors.columns:
-    other_cols = [c for c in predictors.columns if c != col]
-    r_squared = LinearRegression().fit(predictors[other_cols], predictors[col]).score(
-        predictors[other_cols], predictors[col])
-    vif_results[col] = 1 / (1 - r_squared)
-vif_table = pd.Series(vif_results).rename('VIF')
-vif_table
+# Add the intercept column
+predictors_with_const = predictors.assign(const=1.0)
+vif_table = pd.Series(
+    [variance_inflation_factor(predictors_with_const.values, i)
+     for i in range(predictors.shape[1])],
+    index=predictors.columns, name='VIF')
 
-# opa_rdm ~ v1d_rdm + v2d_rdm + direction_rdm + map_rdm
-fit = LinearRegression().fit(predictors, opa_vec)
-regression_results = pd.Series({
-    'v1d_coef': fit.coef_[0],
-    'v2d_coef': fit.coef_[1],
-    'direction_coef': fit.coef_[2],
-    'map_coef': fit.coef_[3],
-})
-regression_results
+# Display VIF with readable predictor names, without touching vif_table itself
+readable_predictor_names = {'v1d': f'Left {region_titles["v1d"]}', 'v2d': f'Left {region_titles["v2d"]}',
+                             'direction': 'Walking direction', 'map': 'Map'}
+(
+    vif_table
+    .rename(readable_predictor_names)
+    .rename_axis(None)
+    .round(2)
+)
 ```
+
+Since the above predictors are fairly indipendent, the following two models were built:
+
+- **Low-Level Model**: Using left V1d and V2d as predictors
+- **Hierarchical Model**: Using the primary visual areas plus direction and map as predictors
+
+The two models were then compared against *left OPA* representational structure using bootstrap method (`1000` iterations).  
+
+```{python}
+#| code-fold: true
+#| label: fig-mr-rsa
+#| fig-cap: "**MR-RSA model comparison**: *Mean Cosine Similarity with left OPA RDM, low-level vs hierarchical model*"
+
+# Build the baseline model with only primary visual RDMs
+low_level_model = rsatoolbox.model.ModelWeighted('low_level_features_model',
+                                                    np.vstack([v1d_vec, v2d_vec]))
+
+# Build the full model for the hypothesis
+hierarchical_rsa_model = rsatoolbox.model.ModelWeighted('hierarchical_model',
+                                                        np.vstack([v1d_vec, v2d_vec, direction_vec, map_vec]))
+
+# Compare the low-level and hierarchical models using bootstrap
+# Suppress eval_bootstrap_pattern's hardcoded tqdm progress bar, which writes to stderr
+with contextlib.redirect_stderr(io.StringIO()):
+    results = rsatoolbox.inference.eval_bootstrap_pattern(
+        models = [low_level_model, hierarchical_rsa_model],
+        data = condition_rdm_objects['lh_opa'],
+        N = 1000
+    )
+
+# Store the result into a tidy DataFrame
+model_labels = ['Low-Level model\n(V1d + V2d)', 'Hierarchical model\n(+ Direction + Map)']
+bootstrap_df = pd.DataFrame(results.evaluations, columns=model_labels).melt(var_name='Model', value_name='Cosine Similarity')
+
+# Direct 2.5th/97.5th percentile of the bootstrap distribution, no re-bootstrapping over it
+def percentile_ci_95(x):
+    return np.percentile(x, 2.5), np.percentile(x, 97.5)
+
+# Plot the mean cosine similarity per model with 95% CI error bars
+fig, ax = plt.subplots(figsize=(6, 5))
+sns.pointplot(data=bootstrap_df, x='Model', y='Cosine Similarity', hue='Model', palette='colorblind',
+              legend=False, errorbar=percentile_ci_95, capsize=0.2, linestyle='none', ax=ax)
+for i, mean in enumerate(results.get_means()):
+    ax.text(i + 0.05, mean, f'{mean:.3f}', ha='left', va='center', fontsize=9)
+ax.set_ylabel('Mean Cosine Similarity to left OPA RDM')
+ax.set_ylim([0, 1])
+ax.set_xlabel('')
+plt.show();
+```
+
+@fig-mr-rsa shows the hierarchical model is more similar to left OPA RDM than the low-level model, but the 95% confidence intervals overlap. The following interpretations can be made:
+
+- Left OPA's representational structure is built from features which are dependent on the low-level features used by V1 and V2. Thus the concerns put forth by [@Epstein_2019] regarding the overlapping nature of sensitives of scene selective areas to both low-level features and higher-order processes should be explored in more detail.
+- The coarse categorical stimuli information provided with the dataset may be insufficient to answer questions about scene areas. The bare nature of the scene itself may be contributing to the flat nature of the scene area RDMs. The risk of such highly constrained stimuli thus go beyond being generalizable to natural scene stimuli[@Epstein_2019].  
+
+I hereby suggest a plan to use the example stimulus files provided as supplementary material of [@Zhang_2020]. The plan involves replacing the characters with uniform color pixels derived from their clothings while preserving the character silhouette. This would solve the absence of details about the map condition variable.  
 
 ## Appendix {#appendix}
 
