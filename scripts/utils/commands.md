@@ -1,6 +1,6 @@
 # Useful commands
 
-# Final render
+# Final render (posts without a Dockerfile)
 quarto render data-slug.qmd --output-dir "$env:NOLE_NEXUS\Nole-Nexus Website\Workbench"
 
 # Run from inside post-slug
@@ -13,3 +13,13 @@ mamba env export --no-builds | Out-File -Encoding utf8 my_environment.yml
 mamba run python scripts/utils/merge_env_versions.py --slug post-slug --environment environment.yml --full my_environment.yml --out environment.yml
 # From post-slug
 mamba run python ../utils/merge_env_versions.py --environment environment.yml --full my_environment.yml --out environment.yml
+
+# Docker build (run from inside post-slug)
+docker build -t -post-slug- .
+
+# Final render (posts with a Dockerfile, run from the workbench root)
+docker run --rm `
+  -v "${PWD}\scripts:/workbench/scripts" `
+  -v "${PWD}\data:/workbench/data" `
+  -v "$env:NOLE_NEXUS\Nole-Nexus Website:/Nole-Nexus Website" `
+  -post-slug-

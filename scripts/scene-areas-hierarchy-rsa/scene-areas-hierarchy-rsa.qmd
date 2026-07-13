@@ -2,6 +2,12 @@
 title: Multiple Regression RSA of Scene-Selective Areas in Human fMRI
 jupyter: fmri
 format: gfm
+wrap: preserve
+bibliography: scene-areas-hierarchy-rsa.bib
+csl: apa.csl
+from: markdown+wikilinks_title_after_pipe
+link-citations: true
+link-bibliography: true
 ---
 
 This post uses human fMRI data to answer the following question: [[Landscape/@Epstein_2019/@Epstein_2019 | Can the relationship between low-level features and the higher-level scene information and the hierarchical nature of scene-selective areas be demonstrated using RSA?]].  
@@ -59,11 +65,14 @@ aria2c -c -x 16 -s 16 -k 1M --content-disposition \
 #| code-summary: "Imports"
 #| label: imports
 
+import warnings
+warnings.filterwarnings('ignore', message='The DICOM readers are highly experimental')
+warnings.filterwarnings('ignore', message='Contrast for run .* is null')
+warnings.filterwarnings('ignore', message="NIftI time units are 'unknown'")
 from pathlib import Path
 import zipfile
 import io
 import contextlib
-import pickle
 import requests
 import numpy as np
 import pandas as pd
@@ -505,190 +514,180 @@ Both atlases were resampled onto participant `26`'s white matter surface then re
 #| code-summary: "Build RDM using GLM effect sizes"
 #| label: build-rdm
 
-# Temporary manual cache by saving to disk
-rdm_cache_path = preprocessed_path / "condition_rdm_objects.pkl"
+# 6 base motion parameters as GLM nuisance regressors
+motion_bases = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z']
+# Build the confound regressors DataFrame (6 motion parameters) per run
+confounds_dfs = []
+for run in range(1, 5):
+    timeseries_confounds_path = preprocessed_path / "func" / f"sub-{SUB}_task-sm_run-{run}_desc-confounds_timeseries.tsv"
+    timeseries_confounds = pd.read_table(timeseries_confounds_path)
+    confounds_df = timeseries_confounds[motion_bases + ['framewise_displacement', 'dvars']]
+    # Fill the NaN values of the first frame with 0
+    confounds_df = confounds_df.fillna(0)
+    confounds_dfs.append(confounds_df)
 
-if rdm_cache_path.exists():
-    with open(rdm_cache_path, 'rb') as f:
-        condition_rdm_objects, roi_voxel_counts, roi_voxel_counts_by_stage, roi_betas_data, roi_residual_data, beta_meta = pickle.load(f)
-else:
-    # 6 base motion parameters as GLM nuisance regressors
-    motion_bases = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z']
-    # Build the confound regressors DataFrame (6 motion parameters) per run
-    confounds_dfs = []
-    for run in range(1, 5):
-        timeseries_confounds_path = preprocessed_path / "func" / f"sub-{SUB}_task-sm_run-{run}_desc-confounds_timeseries.tsv"
-        timeseries_confounds = pd.read_table(timeseries_confounds_path)
-        confounds_df = timeseries_confounds[motion_bases + ['framewise_displacement', 'dvars']]
-        # Fill the NaN values of the first frame with 0
-        confounds_df = confounds_df.fillna(0)
-        confounds_dfs.append(confounds_df)
-
-    # Load the preprocessed bold runs
-    preprocessed_bold_path = preprocessed_path / "func"
+# Load the preprocessed bold runs
+preprocessed_bold_path = preprocessed_path / "func"
+with contextlib.redirect_stdout(io.StringIO()):
     preprocessed_bold_runs = [nib.load(
                                 preprocessed_bold_path / f"sub-{SUB}_task-sm_run-{run}_space-MNI152NLin2009cAsym_desc-preproc_bold.nii.gz")
                                 for run in range(1, 5)]
-    # Compute the frame times for each run
-    run_frame_times = [np.arange(preprocessed_bold_runs[run].shape[-1]) * 2 for run in range(4)]  # 2 sec TR
+# Compute the frame times for each run
+run_frame_times = [np.arange(preprocessed_bold_runs[run].shape[-1]) * 2 for run in range(4)]  # 2 sec TR
 
-    # Find the onset times for the walking period for each run
-    behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
-    formal_Time_record_filepath = f'fMRI_behavior/sub_{SUB}_formal_Time_record_t.txt'
-    timing_onsets = pd.read_table(behavior_zip_file.open(formal_Time_record_filepath), header=None)
-    behavior_zip_file.close()
-    # Get the onset times for the walking period for each run
-    trial_onsets = [timing_onsets[timing_onsets[12] == run][4].values for run in range(1, 5)]
-    # Get the onset times for the facing period for each run
-    trial_offsets = [timing_onsets[timing_onsets[12] == run][6].values for run in range(1, 5)]
+# Find the onset times for the walking period for each run
+behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
+formal_Time_record_filepath = f'fMRI_behavior/sub_{SUB}_formal_Time_record_t.txt'
+timing_onsets = pd.read_table(behavior_zip_file.open(formal_Time_record_filepath), header=None)
+behavior_zip_file.close()
+# Get the onset times for the walking period for each run
+trial_onsets = [timing_onsets[timing_onsets[12] == run][4].values for run in range(1, 5)]
+# Get the onset times for the facing period for each run
+trial_offsets = [timing_onsets[timing_onsets[12] == run][6].values for run in range(1, 5)]
 
-    # Compute a combined brain mask across all 4 runs
-    subject_mask_paths = [preprocessed_path / "func" / f"sub-{SUB}_task-sm_run-{run}_space-MNI152NLin2009cAsym_desc-brain_mask.nii.gz"
-                           for run in range(1, 5)]
-    subject_mask = intersect_masks(subject_mask_paths, threshold=1.0)
+# Compute a combined brain mask across all 4 runs
+subject_mask_paths = [preprocessed_path / "func" / f"sub-{SUB}_task-sm_run-{run}_space-MNI152NLin2009cAsym_desc-brain_mask.nii.gz"
+                       for run in range(1, 5)]
+subject_mask = intersect_masks(subject_mask_paths, threshold=1.0)
 
-    # Compute the number of trials per run
-    n_trials_per_run = [len(trial_onsets[run]) for run in range(4)]
+# Compute the number of trials per run
+n_trials_per_run = [len(trial_onsets[run]) for run in range(4)]
 
-    # Attach map/walking_direction conditions to each trial
-    sub_conditions = behavior_data.query('participant_id == @SUB').reset_index(drop=True)
-    sub_conditions['run'] = np.repeat(np.arange(1, 5), n_trials_per_run)
-    sub_conditions['trial_index'] = np.concatenate([np.arange(1, n + 1) for n in n_trials_per_run])
+# Attach map/walking_direction conditions to each trial
+sub_conditions = behavior_data.query('participant_id == @SUB').reset_index(drop=True)
+sub_conditions['run'] = np.repeat(np.arange(1, 5), n_trials_per_run)
+sub_conditions['trial_index'] = np.concatenate([np.arange(1, n + 1) for n in n_trials_per_run])
 
-    # Condition-level GLM: one regressor per map x direction combo instead of per trial
-    sub_conditions['map_direction'] = (sub_conditions['map'].astype(str) + '_' +
-                                        sub_conditions['walking_direction'].astype(str))
-    sub_combos = [sub_conditions.query('run == @run')['map_direction'].values for run in range(1, 5)]
+# Condition-level GLM: one regressor per map x direction combo instead of per trial
+sub_conditions['map_direction'] = (sub_conditions['map'].astype(str) + '_' +
+                                    sub_conditions['walking_direction'].astype(str))
+sub_combos = [sub_conditions.query('run == @run')['map_direction'].values for run in range(1, 5)]
 
-    # Define the events DataFrame with trial_type shared across a condition's trials
-    events_dfs = []
-    for run in range(4):
-        events_dfs.append(pd.DataFrame({
-            'onset': trial_onsets[run] / 1000,
-            'duration': (trial_offsets[run] - trial_onsets[run]) / 1000,
-            'trial_type': [f'combo_{c}' for c in sub_combos[run]]
-        }))
+# Define the events DataFrame with trial_type shared across a condition's trials
+events_dfs = []
+for run in range(4):
+    events_dfs.append(pd.DataFrame({
+        'onset': trial_onsets[run] / 1000,
+        'duration': (trial_offsets[run] - trial_onsets[run]) / 1000,
+        'trial_type': [f'combo_{c}' for c in sub_combos[run]]
+    }))
 
-    # Build the design matrices for each run
-    design_matrics = [
-        first_level.make_first_level_design_matrix(
-            frame_times = run_frame_times[run],
-            events = events_dfs[run],
-            add_regs = confounds_dfs[run][motion_bases],
-            add_reg_names = motion_bases
-        ) for run in range(4)
-    ]
+# Build the design matrices for each run
+design_matrics = [
+    first_level.make_first_level_design_matrix(
+        frame_times = run_frame_times[run],
+        events = events_dfs[run],
+        add_regs = confounds_dfs[run][motion_bases],
+        add_reg_names = motion_bases
+    ) for run in range(4)
+]
 
-    # Build the GLM model
-    glm_model = first_level.FirstLevelModel(
-        mask_img=intersect_masks(subject_mask_paths, threshold=1.0),
-        minimize_memory=False
-    )
+# Build the GLM model
+glm_model = first_level.FirstLevelModel(
+    mask_img=intersect_masks(subject_mask_paths, threshold=1.0),
+    minimize_memory=False
+)
 
-    # Fit the model to the preprocessed bold runs and design matrices
-    glm_model.fit(
-        run_imgs = preprocessed_bold_runs,
-        design_matrices = design_matrics
-    )
+# Fit the model to the preprocessed bold runs and design matrices
+glm_model.fit(
+    run_imgs = preprocessed_bold_runs,
+    design_matrices = design_matrics
+)
 
-    # Define the unique conditions across all runs
-    conditions = sorted(sub_conditions['map_direction'].unique())
+# Define the unique conditions across all runs
+conditions = sorted(sub_conditions['map_direction'].unique())
 
-    # One beta per condition per run
-    betas = []
-    beta_meta = []
-    for run in range(4):
-        run_columns = design_matrics[run].columns
-        for c in conditions:
-            combo_name = f'combo_{c}'
-            # Only compute the contrast if the condition is present in this run's design matrix
-            if combo_name not in run_columns:
-                continue
-            beta_map = glm_model.compute_contrast(
-                [combo_name if r == run else np.zeros(design_matrics[r].shape[1]) for r in range(4)],
-                output_type='effect_size'
-            )
-            betas.append(beta_map)
-            beta_meta.append({'run': run + 1, 'map_direction': c})
-    betas_4d = concat_imgs(betas)
-    # Prepare a DataFrame with the run and map_direction
-    beta_meta = pd.DataFrame(beta_meta)
-    beta_meta[['map', 'walking_direction']] = beta_meta['map_direction'].str.split('_', expand=True)
-
-    # Get the per run residuals for crossnobis distance computation
-    run_residuals = glm_model.residuals
-
-    # Resample each native-space ROI mask onto the MNI152NLin2009cAsym grid
-    steel_regions = ['ppa', 'opa', 'mpa']
-    visf_regions = ['v1d', 'v1v', 'v2d', 'v2v']
-    label_dir = preprocessed_path / "label"
-    t1w_to_mni_xfm = preprocessed_path / "anat" / f"sub-{SUB}_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5"
-    brain_mask_data = subject_mask.get_fdata().astype(bool)
-    roi_masks = {}
-    # Native and post-transform voxel counts, kept for the Appendix voxel-count table
-    roi_voxel_counts_by_stage = {}
-    for hemi in ['lh', 'rh']:
-        for region in steel_regions + visf_regions:
-            # Path to the surface-extended-to-volume file created in docker
-            native_mask_path = label_dir / f"{hemi}.{region}.top800.nii.gz"
-            native_mask_ants = ants.image_read(str(native_mask_path))
-            # Transform to MNI space
-            transformed_ants = ants.apply_transforms(fixed=ants.from_nibabel_nifti(subject_mask), moving=native_mask_ants,
-                                               transformlist=[str(t1w_to_mni_xfm)],
-                                               interpolator='genericLabel')
-
-            roi_mask = ants.to_nibabel_nifti(transformed_ants).get_fdata().astype(bool)
-            # Drop any ROI voxel that falls outside the GLM's actual brain mask
-            roi_masks[f'{hemi}_{region}'] = roi_mask & brain_mask_data
-            roi_voxel_counts_by_stage[f'{hemi}_{region}'] = {
-                'native': int((native_mask_ants.numpy() > 0).sum()),
-                'post_transform': int(roi_masks[f'{hemi}_{region}'].sum()),
-            }
-
-    # Pull out actual effect sizes per ROI, voxels x (condition x run) observations
-    betas_4d_data = betas_4d.get_fdata()
-    roi_betas_data = {}
-    for name, mask in roi_masks.items():
-        roi_betas_data[name] = betas_4d_data[mask]
-    # ROI-masked residuals per run, needed for the crossnobis noise precision matrix
-    roi_residual_data = {}
-    for name, mask in roi_masks.items():
-        roi_residual_data[name] = [res.get_fdata()[mask] for res in run_residuals]
-
-    # MAD-based outlier voxel exclusion modified z > 3.5
-    # Applied to every ROI to exclude any outliers driving statistical analysis
-    for name in roi_betas_data:
-        voxel_std = roi_betas_data[name].std(axis=1)
-        mad = np.median(np.abs(voxel_std - np.median(voxel_std)))
-        modified_z = 0.6745 * (voxel_std - np.median(voxel_std)) / mad
-        keep_voxels = np.abs(modified_z) <= 3.5
-        roi_betas_data[name] = roi_betas_data[name][keep_voxels]
-        roi_residual_data[name] = [res[keep_voxels] for res in roi_residual_data[name]]
-
-    # Neural RSA via rsatoolbox, crossnobis distance
-    condition_rdm_objects = {}
-    for name, roi_data in roi_betas_data.items():
-        # Define the dataset for rsatoolbox
-        dataset = rsatoolbox.data.Dataset(
-            measurements=roi_data.T,
-            obs_descriptors={'map': beta_meta['map'].values,
-                              'walking_direction': beta_meta['walking_direction'].values,
-                              'map_direction': beta_meta['map_direction'].values,
-                              'run': beta_meta['run'].astype(str).values}
+# One beta per condition per run
+betas = []
+beta_meta = []
+for run in range(4):
+    run_columns = design_matrics[run].columns
+    for c in conditions:
+        combo_name = f'combo_{c}'
+        # Only compute the contrast if the condition is present in this run's design matrix
+        if combo_name not in run_columns:
+            continue
+        beta_map = glm_model.compute_contrast(
+            [combo_name if r == run else np.zeros(design_matrics[r].shape[1]) for r in range(4)],
+            output_type='effect_size'
         )
-        # Compute the noise precision matrix for crossnobis distance
-        noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
-                            for residuals in roi_residual_data[name]]
-        # Store the raw RDMs object directly, no DataFrame conversion
-        condition_rdm_objects[name] = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
-                                                                           noise=noise_precision, cv_descriptor='run')
+        betas.append(beta_map)
+        beta_meta.append({'run': run + 1, 'map_direction': c})
+betas_4d = concat_imgs(betas)
+# Prepare a DataFrame with the run and map_direction
+beta_meta = pd.DataFrame(beta_meta)
+beta_meta[['map', 'walking_direction']] = beta_meta['map_direction'].str.split('_', expand=True)
 
-    # Final per-ROI voxel count
-    roi_voxel_counts = {name: roi_data.shape[0] for name, roi_data in roi_betas_data.items()}
+# Get the per run residuals for crossnobis distance computation
+run_residuals = glm_model.residuals
 
-    # Save everything the RDM heatmaps and permutation test need, so subsequent renders can skip recomputation
-    with open(rdm_cache_path, 'wb') as f:
-        pickle.dump((condition_rdm_objects, roi_voxel_counts, roi_voxel_counts_by_stage, roi_betas_data, roi_residual_data, beta_meta), f)
+# Resample each native-space ROI mask onto the MNI152NLin2009cAsym grid
+steel_regions = ['ppa', 'opa', 'mpa']
+visf_regions = ['v1d', 'v1v', 'v2d', 'v2v']
+label_dir = preprocessed_path / "label"
+t1w_to_mni_xfm = preprocessed_path / "anat" / f"sub-{SUB}_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5"
+brain_mask_data = subject_mask.get_fdata().astype(bool)
+roi_masks = {}
+# Native and post-transform voxel counts, kept for the Appendix voxel-count table
+roi_voxel_counts_by_stage = {}
+for hemi in ['lh', 'rh']:
+    for region in steel_regions + visf_regions:
+        # Path to the surface-extended-to-volume file created in docker
+        native_mask_path = label_dir / f"{hemi}.{region}.top800.nii.gz"
+        native_mask_ants = ants.image_read(str(native_mask_path))
+        # Transform to MNI space
+        transformed_ants = ants.apply_transforms(fixed=ants.from_nibabel_nifti(subject_mask), moving=native_mask_ants,
+                                           transformlist=[str(t1w_to_mni_xfm)],
+                                           interpolator='genericLabel')
+
+        roi_mask = ants.to_nibabel_nifti(transformed_ants).get_fdata().astype(bool)
+        # Drop any ROI voxel that falls outside the GLM's actual brain mask
+        roi_masks[f'{hemi}_{region}'] = roi_mask & brain_mask_data
+        roi_voxel_counts_by_stage[f'{hemi}_{region}'] = {
+            'native': int((native_mask_ants.numpy() > 0).sum()),
+            'post_transform': int(roi_masks[f'{hemi}_{region}'].sum()),
+        }
+
+# Pull out actual effect sizes per ROI, voxels x (condition x run) observations
+betas_4d_data = betas_4d.get_fdata()
+roi_betas_data = {}
+for name, mask in roi_masks.items():
+    roi_betas_data[name] = betas_4d_data[mask]
+# ROI-masked residuals per run, needed for the crossnobis noise precision matrix
+roi_residual_data = {}
+for name, mask in roi_masks.items():
+    roi_residual_data[name] = [res.get_fdata()[mask] for res in run_residuals]
+
+# MAD-based outlier voxel exclusion modified z > 3.5
+# Applied to every ROI to exclude any outliers driving statistical analysis
+for name in roi_betas_data:
+    voxel_std = roi_betas_data[name].std(axis=1)
+    mad = np.median(np.abs(voxel_std - np.median(voxel_std)))
+    modified_z = 0.6745 * (voxel_std - np.median(voxel_std)) / mad
+    keep_voxels = np.abs(modified_z) <= 3.5
+    roi_betas_data[name] = roi_betas_data[name][keep_voxels]
+    roi_residual_data[name] = [res[keep_voxels] for res in roi_residual_data[name]]
+
+# Neural RSA via rsatoolbox, crossnobis distance
+condition_rdm_objects = {}
+for name, roi_data in roi_betas_data.items():
+    # Define the dataset for rsatoolbox
+    dataset = rsatoolbox.data.Dataset(
+        measurements=roi_data.T,
+        obs_descriptors={'map': beta_meta['map'].values,
+                          'walking_direction': beta_meta['walking_direction'].values,
+                          'map_direction': beta_meta['map_direction'].values,
+                          'run': beta_meta['run'].astype(str).values}
+    )
+    # Compute the noise precision matrix for crossnobis distance
+    noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
+                        for residuals in roi_residual_data[name]]
+    # Store the raw RDMs object directly, no DataFrame conversion
+    condition_rdm_objects[name] = rsatoolbox.rdm.calc_rdm_crossnobis(dataset, descriptor='map_direction',
+                                                                       noise=noise_precision, cv_descriptor='run')
+
+# Final per-ROI voxel count
+roi_voxel_counts = {name: roi_data.shape[0] for name, roi_data in roi_betas_data.items()}
 ```
 
 A condition-level GLM was fit per run, with one regressor per map $\times$ walking-direction combination. The 6 base motion parameters (3 for translations, 3 for rotations) were used as additional regressors for the model. This yielded one effect-size ($\beta$) 4D volume per condition per run, which is masked into each of the ROIs. Any voxel with a median absolute deviation (MAD) z-score > 3.5 is excluded to avoid any domination of signal by outliers.  
@@ -783,61 +782,51 @@ The following robustness check performs a Monte Carlo simulation (`1000` permuta
 #| code-summary: "Permutation test against a shuffled-label null"
 #| label: rdm-permutation-test
 
-perm_cache_path = preprocessed_path / "permutation_results.pkl"
+n_permutations = 1000
+rng = np.random.default_rng(0)  # Ensure reproducibility of the permutation test
+permutation_results = {}
+for name, roi_data in roi_betas_data.items():
+    noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
+                        for residuals in roi_residual_data[name]]
 
-if perm_cache_path.exists():
-    with open(perm_cache_path, 'rb') as f:
-        permutation_df = pickle.load(f)
-else:
-    n_permutations = 1000
-    rng = np.random.default_rng(0)  # Ensure reproducibility of the permutation test
-    permutation_results = {}
-    for name, roi_data in roi_betas_data.items():
-        noise_precision = [rsatoolbox.data.prec_from_residuals(residuals.T)
-                            for residuals in roi_residual_data[name]]
+    # Reuse the already-computed RDM instead of recomputing it
+    computed_matrix = condition_rdm_objects[name].get_matrices()[0]
+    # Test statistic: mean distance between conditions, off-diagonal only
+    mean_distance = computed_matrix[~np.eye(computed_matrix.shape[0], dtype=bool)].mean()
 
-        # Reuse the already-computed RDM instead of recomputing it
-        computed_matrix = condition_rdm_objects[name].get_matrices()[0]
-        # Test statistic: mean distance between conditions, off-diagonal only
-        mean_distance = computed_matrix[~np.eye(computed_matrix.shape[0], dtype=bool)].mean()
+    null_mean_distances = []
+    for _ in range(n_permutations):
+        # Under H0, condition labels carry no information, so shuffle them
+        # Shuffle within each run to keep the cv_descriptor structure intact
+        shuffled_labels = (beta_meta.groupby('run')['map_direction']
+                            .transform(lambda s: rng.permutation(s.values)))
+        perm_dataset = rsatoolbox.data.Dataset(
+            measurements=roi_data.T,
+            obs_descriptors={'map_direction': shuffled_labels.values,
+                              'run': beta_meta['run'].astype(str).values}
+        )
+        perm_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(perm_dataset, descriptor='map_direction',
+                                                       noise=noise_precision, cv_descriptor='run')
+        perm_matrix = perm_rdm.get_matrices()[0]
+        perm_mean_distance = perm_matrix[~np.eye(perm_matrix.shape[0], dtype=bool)].mean()
+        null_mean_distances.append(perm_mean_distance)
 
-        null_mean_distances = []
-        for _ in range(n_permutations):
-            # Under H0, condition labels carry no information, so shuffle them
-            # Shuffle within each run to keep the cv_descriptor structure intact
-            shuffled_labels = (beta_meta.groupby('run')['map_direction']
-                                .transform(lambda s: rng.permutation(s.values)))
-            perm_dataset = rsatoolbox.data.Dataset(
-                measurements=roi_data.T,
-                obs_descriptors={'map_direction': shuffled_labels.values,
-                                  'run': beta_meta['run'].astype(str).values}
-            )
-            perm_rdm = rsatoolbox.rdm.calc_rdm_crossnobis(perm_dataset, descriptor='map_direction',
-                                                           noise=noise_precision, cv_descriptor='run')
-            perm_matrix = perm_rdm.get_matrices()[0]
-            perm_mean_distance = perm_matrix[~np.eye(perm_matrix.shape[0], dtype=bool)].mean()
-            null_mean_distances.append(perm_mean_distance)
+    null_mean_distances = np.array(null_mean_distances)
+    # Empirical one-tailed p-value
+    p_value = (np.sum(null_mean_distances >= mean_distance) + 1) / (n_permutations + 1)
+    permutation_results[name] = {
+        'mean_distance': mean_distance,
+        'p_value': p_value,
+        # 95% CI of the null distribution, shown alongside the FDR-based significance call
+        'null_ci_low': np.percentile(null_mean_distances, 2.5),
+        'null_ci_high': np.percentile(null_mean_distances, 97.5),
+        'null_mean_distances': null_mean_distances,
+    }
+# Package into a dataframe
+permutation_df = pd.DataFrame(permutation_results).T
 
-        null_mean_distances = np.array(null_mean_distances)
-        # Empirical one-tailed p-value
-        p_value = (np.sum(null_mean_distances >= mean_distance) + 1) / (n_permutations + 1)
-        permutation_results[name] = {
-            'mean_distance': mean_distance,
-            'p_value': p_value,
-            # 95% CI of the null distribution, shown alongside the FDR-based significance call
-            'null_ci_low': np.percentile(null_mean_distances, 2.5),
-            'null_ci_high': np.percentile(null_mean_distances, 97.5),
-            'null_mean_distances': null_mean_distances,
-        }
-    # Package into a dataframe
-    permutation_df = pd.DataFrame(permutation_results).T
-
-    # Benjamini-Hochberg FDR correction across all 14 ROI-wise p-values
-    permutation_df['significant'] = false_discovery_control(permutation_df['p_value'].astype(float).values, method='bh') <= 0.05
-
-    # Save so subsequent renders can skip recomputation
-    with open(perm_cache_path, 'wb') as f:
-        pickle.dump(permutation_df, f)
+# Benjamini-Hochberg FDR correction across all 14 ROI-wise p-values
+permutation_df['significant'] = false_discovery_control(permutation_df['p_value'].astype(float).values, method='bh') <= 0.05
 ```
 
 ```{python}

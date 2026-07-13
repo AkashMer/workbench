@@ -1,0 +1,10 @@
+# Allow tracking for following files
+
+!scidb_manifest.txt
+
+!derivatives/
+derivatives/*
+!derivatives/candidate_selection/
+derivatives/candidate_selection/*
+!derivatives/candidate_selection/candidate_metrics.tsv
+!derivatives/candidate_selection/candidate_metrics.json

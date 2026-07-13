@@ -1,0 +1,20 @@
+{
+    "Description": "Per-subject candidate selection metrics for the scene-areas-hierarchy-rsa post",
+    "participant_id": {
+        "Description": "Subject identifier"
+    },
+    "mean_fd": {
+        "Description": "Mean framewise displacement across the 4 bold runs, each computed from 50 evenly-spaced consecutive frame pairs per run",
+        "Units": "mm",
+        "Derivative": true
+    },
+    "sd_dvars": {
+        "Description": "Standard deviation of frame-to-frame DVARS within a run, computed after dividing the signal by its most common value and multiplying by 1000, then taking the worst (maximum) value across the 4 runs",
+        "Units": "x10 percent BOLD signal change",
+        "Derivative": true
+    },
+    "hnd_accuracy": {
+        "Description": "Proportion of HND (head-nod detection) trials answered correctly, across all 4 bold runs",
+        "Derivative": true
+    }
+}

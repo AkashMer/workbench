@@ -1,4 +1,4 @@
-name: fmri
+name: scene-areas-hierarchy-rsa
 channels:
 - conda-forge
 dependencies:
