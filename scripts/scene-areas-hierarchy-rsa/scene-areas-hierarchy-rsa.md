@@ -1,12 +1,11 @@
-# Undecided
+# Multiple Regression RSA of Scene-Selective Areas in Human fMRI
 
 
-This post implements a representational similarity analysis of
-scene-selective visual areas using human fMRI data in order to answer
-the following question: \[\[Landscape/@Epstein_2019/@Epstein_2019 \| Can
-the relationship between low-level features and the higher-level scene
-information and the hierarchical nature of scene-selective areas be
-demonstrated using RSA?\]\].
+This post uses human fMRI data to answer the following question:
+\[\[Landscape/@Epstein_2019/@Epstein_2019 \| Can the relationship
+between low-level features and the higher-level scene information and
+the hierarchical nature of scene-selective areas be demonstrated using
+RSA?\]\].
 
 ## Stimulus Description
 
@@ -16,20 +15,20 @@ The raw data came from [A dataset of human fMRI/MEG experiments with eye
 tracking for spatial memory research using virtual
 reality](https://doi.org/10.1016/j.dib.2022.108380)\[@Zhang_2022\].
 Participants performed a spatial memory (SM) task where a first-person
-perpective 3D Unity Engine (Unity Technologies, San Francisco) game
-video was displayed on a LCD monitor. Each trial was divided into three
+view of 3D Unity Engine (Unity Technologies, San Francisco) game video
+was displayed on an LCD monitor. Each trial was divided into three
 sequential periods:
 
-- **Walking period**(6.0 s): Walking motion from the boundary of a
+- **Walking period** *(6.0 s)*: Walking motion from the boundary of a
   circular environment towards the center where three human characters
   (3D models from [Mixamo, San Francisco](https://www.mixamo.com)) are
   arranged pseudorandomly at three adjacent vertices of a square. The
   direction of approach corresponds to the 4 sides of the square.
-- **Facing period**(2.0 s): The camera centers on a cue character to
+- **Facing period** *(2.0 s)*: The camera centers on a cue character to
   convey the orientation with respect to the spatial environment.
-- **Targeting period**(2.0 s): The screen displayed a target character
-  in a pixelated noise background, simulating the target’s location
-  relative to the participant’s position.
+- **Targeting period** *(2.0 s)*: The screen displayed a target
+  character in a pixelated noise background, simulating the target’s
+  location relative to the participant’s position.
 - **Choice period**: Participants indicated the target’s location
   relative to the simulated orientation of the participant (facing
   period) with a self-paced key press (left, right, or back). The
@@ -43,14 +42,14 @@ attention to the heads of the human characters because there was a 20.6%
 probability for a character to nod their head at any random time point
 during the walking period. Such trials are identified as head-nodding
 detection (HND) trials, which served a dual purpose: draw attention away
-from spatial layout and performance measurement.  
+from spatial layout and measure behavioral engagement.  
 The following analysis excludes the choice period which relies on memory
 and the HND trials which only contained the walking period.
 
 **Ethological significance**: The three periods which are included
-involve active encoding of the spatial layout with each successive
+involve passive encoding of the spatial layout with each successive
 period adding more context. The first-person virtual environment is more
-ethologically relevant than static image viewing, though the the
+ethologically relevant than static image viewing, though the
 non-immersive nature of the monitor presentation limits how naturalistic
 the visual input is relative to real-world spatial perception.
 
@@ -65,7 +64,7 @@ the visual input is relative to real-world spatial perception.
   - *Medial Place Area/Retrosplenial Complex*: MPA/RSC
 
 These areas span the low-level to high-level feature hierarchy for scene
-perception.
+perception\[@Epstein_2019\].
 
 **Context of the recorded activity**: Each participant went through four
 scanning sessions lasting ~70 minutes. All trials/runs were recorded
@@ -82,7 +81,6 @@ as behavioral markers.
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 aria2c -c -x 16 -s 16 -k 1M --content-disposition \
   -d ../../data/scene-areas-hierarchy-rsa/raw_fmri \
-import rsatoolbox
   -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
 ```
 
@@ -95,6 +93,7 @@ import rsatoolbox
 from pathlib import Path
 import zipfile
 import io
+import contextlib
 import pickle
 import requests
 import numpy as np
@@ -103,10 +102,8 @@ import nibabel as nib
 import pydicom
 from nibabel.nicom import dicomwrappers
 import ants
-from templateflow import api as tflow
-from scipy import ndimage
 from scipy.spatial.transform import Rotation
-from scipy.stats import mode, norm, false_discovery_control
+from scipy.stats import mode, false_discovery_control
 from scipy.spatial import procrustes
 from nilearn.masking import compute_epi_mask, intersect_masks
 from nilearn.glm import first_level
@@ -115,7 +112,6 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import rsatoolbox
 from sklearn.manifold import MDS
-from sklearn.linear_model import LinearRegression
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # Get the current data-slug for the current folder and the data directory
@@ -155,8 +151,7 @@ behavioral files are used:
     characters at 3 vertices of the square. No stim files are available
     to signify which 3 maps were psudorandomly chosen for each
     participant. Nevertheless, this condition is included since it
-    determines categorically determines the spatial layout being
-    simulated.
+    categorically determines the spatial layout being simulated.
   - *walking direction* (column 3) - The approach direction
     corresponding to the 4 sides of the square. This condition is
     included because it determines the overall structure of the scene.
@@ -166,8 +161,8 @@ behavioral files are used:
   - *HND trial performance* (column 6) - included as a behavioral metric
     to be used for participant selection criteria.
 - **Trial timings**:
-  - *onset of walking period* (column 5) - corresponds to the beginning
-    of trial for our analysis.
+  - *onset of walking period* (column 5) - corresponds to trial onset
+    for our analysis.
   - *onset of response cue* (column 11) - corresponds to the end of the
     trial for our analysis. The inter-stimulus interval (ISI) before the
     choice period is included due to the inherent slowness of blood
@@ -182,12 +177,12 @@ is to be used to rank each participant:
 
 - Exclude if mean **Frame Displacement** (FD) \> 0.2;
 - Rank remaining using a rank-sum approach based on the **maximum
-  standard deviation of the frame-to-frame DVARS\[@Power_2012\] profile
+  standard deviation of the frame-to-frame DVARS profile\[@Power_2012\]
   across runs** (penalizes sudden spikes) and **HND trial performance**
   (secondary task engagement)
 
-The two best and worst candidates with their corresponding metrics and
-ranks are as follows:
+The two best and worst candidates with their corresponding metrics are
+as follows:
 
 <details class="code-fold">
 <summary>Candidate selection</summary>
@@ -521,8 +516,8 @@ The [Place memory parcels and
 localizer](https://osf.io/xmhn7/)\[@Steel_2024\] provides probabilistic
 parcels for bilateral **OPA**, **PPA**, and **MPA/RSC**.
 
-Thus in total 14 ROIs (7 in each hemisphere) are selected so as to form
-a hypethetical pathway starting from V1 to V2 to one of the
+Thus in total 14 ROIs (7 in each hemisphere) are selected to form a
+hypothetical pathway starting from V1 to V2 to one of the
 scene-selective areas.
 
 <details class="code-fold"><summary>Prepare ROI masks in participant 26's native space</summary>
@@ -610,10 +605,10 @@ Both atlases were resampled onto participant `26`’s white matter surface
 then reduced to the top `800` spatially contiguous vertices per region
 based on probability measure. This ensures all areas occupy almost
 similar amount of voxels. Volumetric masks were built from these surface
-meshes with a spatial density filter of `30%`. The basic process
-involves sampling at 10% intervals while walking from the gray-white
-matter boundary to the pial surface. Any voxel which contains \< 0.3
-samples in it is excluded.
+meshes with a spatial density filter of 30%. The basic process involves
+sampling at 10% intervals while walking from the gray-white matter
+boundary to the pial surface. Any voxel which contains \< 0.3 samples in
+it is excluded.
 
 ## High-Dimensional Population Response Space
 
@@ -626,7 +621,7 @@ rdm_cache_path = preprocessed_path / "condition_rdm_objects.pkl"
 
 if rdm_cache_path.exists():
     with open(rdm_cache_path, 'rb') as f:
-        condition_rdm_objects, roi_voxel_counts, roi_betas_data, roi_residual_data, beta_meta = pickle.load(f)
+        condition_rdm_objects, roi_voxel_counts, roi_voxel_counts_by_stage, roi_betas_data, roi_residual_data, beta_meta = pickle.load(f)
 else:
     # 6 base motion parameters as GLM nuisance regressors
     motion_bases = ['trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z']
@@ -741,6 +736,8 @@ else:
     t1w_to_mni_xfm = preprocessed_path / "anat" / f"sub-{SUB}_from-T1w_to-MNI152NLin2009cAsym_mode-image_xfm.h5"
     brain_mask_data = subject_mask.get_fdata().astype(bool)
     roi_masks = {}
+    # Native and post-transform voxel counts, kept for the Appendix voxel-count table
+    roi_voxel_counts_by_stage = {}
     for hemi in ['lh', 'rh']:
         for region in steel_regions + visf_regions:
             # Path to the surface-extended-to-volume file created in docker
@@ -754,6 +751,10 @@ else:
             roi_mask = ants.to_nibabel_nifti(transformed_ants).get_fdata().astype(bool)
             # Drop any ROI voxel that falls outside the GLM's actual brain mask
             roi_masks[f'{hemi}_{region}'] = roi_mask & brain_mask_data
+            roi_voxel_counts_by_stage[f'{hemi}_{region}'] = {
+                'native': int((native_mask_ants.numpy() > 0).sum()),
+                'post_transform': int(roi_masks[f'{hemi}_{region}'].sum()),
+            }
 
     # Pull out actual effect sizes per ROI, voxels x (condition x run) observations
     betas_4d_data = betas_4d.get_fdata()
@@ -798,7 +799,7 @@ else:
 
     # Save everything the RDM heatmaps and permutation test need, so subsequent renders can skip recomputation
     with open(rdm_cache_path, 'wb') as f:
-        pickle.dump((condition_rdm_objects, roi_voxel_counts, roi_betas_data, roi_residual_data, beta_meta), f)
+        pickle.dump((condition_rdm_objects, roi_voxel_counts, roi_voxel_counts_by_stage, roi_betas_data, roi_residual_data, beta_meta), f)
 ```
 
 </details>
@@ -808,8 +809,8 @@ $\times$ walking-direction combination. The 6 base motion parameters (3
 for translations, 3 for rotations) were used as additional regressors
 for the model. This yielded one effect-size ($\beta$) 4D volume per
 condition per run, which is masked into each of the ROIs. Any voxel with
-a median absolute deviation (MAD) z-score \> 3.5 is excluded from a ROI,
-to avoid any domination of signal by outliers.
+a median absolute deviation (MAD) z-score \> 3.5 is excluded to avoid
+any domination of signal by outliers.
 
 The resulting per-run $\beta$ patterns are converted into a
 representational dissimilarity matrix (RDM) using crossnobis distance
@@ -892,7 +893,7 @@ plt.show();
 ![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-rdm-heatmaps-output-1.png)
 
 Figure 1: **ROI-wise RDM** for participant 26: *Walking direction forms
-the large blocks, map forms the small blocks within each. Brackets show
+the large blocks, map forms the small blocks within. Brackets show
 number of voxels in each area*
 
 </div>
@@ -902,7 +903,7 @@ number of voxels in each area*
 All areas have a similar amount of voxels except for right OPA. The
 large drop from 800 voxels occured when the areas were transformed into
 subject-native MNI152 space. The MAD exclusion was modest but caught
-true outliers.
+true outliers (see [Appendix](#appendix)).
 
 - **Left hemisphere**:
   - **V1d, V1v**: The dissimalarity between direction 3 and directions
@@ -910,13 +911,13 @@ true outliers.
     low-level feature is being encoded which might be used to simulate
     direction 3.
   - **V2d, V2v**: V2d has a highly dissimilar map $\times$ direction
-    combination is seen as a long striped pattern crossing direction
+    combination seen as a long striped pattern crossing direction
     boundaries. This suggests selectivity for visual features that recur
     across conditions. V2v is flat with no clear structure visible.
   - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no
-    distinct block structure is visible. There maybe some structure in
+    distinct block structure is visible. There may be some structure in
     MPA for direction 1 vs. other directions but the distinction is
-    weak.
+    subtle.
 - **Right hemisphere**:
   - **V1d, V1v**: The dissimalarity between directions 3, 4 and
     directions 1, 2 is clear. This loosely matches the structure seen in
@@ -924,26 +925,27 @@ true outliers.
     area structure is more distinct as compared to dorsal which is
     interesting since the retinotopic maps of ventral areas cover the
     upper visual fields, but the characters were arranged on the ground,
-    mostly in the lower visual field.
+    mostly in the lower visual field. One possible explanation could be
+    linked to the placement position of the LCD monitor.
   - **V2d, V2v**: V2d shows greater dissimalrity between direction 3 and
     direction 4 but not for all map conditions. V2v shows a similar
     structure for direction 1 against all 3 directions. This is
     difficult to interpret since the stim files which could show the
-    exact arrangement of characters is not available. All three
-    characters had different color & style of clothes.
+    exact arrangement of characters is not available. One possible
+    explanation could be related to the different color & style of
+    clothes worn by the characters.
   - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no
     distinct block structure is visible. OPA shows one highly dissimilar
     map(2) $\times$ direction(2 vs. 3) combination but rest of the
     structure is near flat.
 
-The textured overall structure is present as expected for primary and
+The overall textured structure is present as expected for primary and
 secondary areas, but the flat heatmaps of the scene-selective areas are
 contradictory to their function in scene processing\[@Epstein_2019\].
 The low values of crossnobis distance are expected given the categorical
-nature of the trial conditions and the one subject data. A robustness
+nature of the trial conditions and one subject analysis. A robustness
 check using permutations with shuffled data across conditions is needed
-to confirm absence of any noise contribution. The chances of noise are
-low due to the inherent way crossnobis is computed.
+to confirm absence of any noise contribution.
 
 ## RDM Robustness Check
 
@@ -1029,15 +1031,10 @@ null_color = '#8a8fa3'
 significant_color, nonsignificant_color = sns.color_palette('colorblind')[2:4]
 # Arrange them as left and right pairs
 paired_roi_labels = [f'{hemi}_{region}' for region in region_order for hemi in ('lh', 'rh')]
-# Define spacing between ROIs and left and right hemisphere
-within_region_gap = 1.2
-between_region_gap = 2.2
-positions = np.array([i * between_region_gap + side * within_region_gap
-                       for i in range(len(region_order)) for side in (0, 1)])
 # Generate the violin plot
 fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
 violin_data = [permutation_df.loc[roi, 'null_mean_distances'] for roi in paired_roi_labels]
-parts = ax.violinplot(violin_data, positions=positions, widths=within_region_gap * 0.8, showmedians=True)
+parts = ax.violinplot(violin_data, positions=np.arange(len(paired_roi_labels)), showmedians=True)
 # Set the violin plot colors to the custom color defined above
 for body in parts['bodies']:
     body.set_facecolor(null_color)
@@ -1049,22 +1046,20 @@ for key in ('cmedians', 'cbars', 'cmins', 'cmaxes'):
 real_values = [permutation_df.loc[roi, 'mean_distance'] for roi in paired_roi_labels]
 dot_colors = [significant_color if permutation_df.loc[roi, 'significant'] else nonsignificant_color
               for roi in paired_roi_labels]
-ax.scatter(positions, real_values, color=dot_colors, s=80, zorder=3)
+ax.scatter(np.arange(len(paired_roi_labels)), real_values, color=dot_colors, s=80, zorder=3)
 # Manual legend entries for the two significance colors
 significant_handle = plt.Line2D([], [], marker='o', linestyle='', color=significant_color,
                                  label='p < BH-FDR threshold (q = 0.05)')
 nonsignificant_handle = plt.Line2D([], [], marker='o', linestyle='', color=nonsignificant_color,
                                     label='p ≥ BH-FDR threshold')
-# Vertical separators between regions, placed midway through each region's between-region gap
-for i in range(len(region_order) - 1):
-    sep = (i * between_region_gap + within_region_gap + (i + 1) * between_region_gap) / 2
+# Vertical separators between regions
+for sep in np.arange(1.5, len(paired_roi_labels), 2):
     ax.axvline(sep, color='lightgray', linewidth=1, zorder=0)
 # Region name centered above each pair-block
 for i, region in enumerate(region_order):
-    ax.text(i * between_region_gap + within_region_gap / 2, 1.02, region_titles[region],
-            ha='center', va='bottom', fontsize=14, transform=ax.get_xaxis_transform())
+    ax.text(2 * i + 0.5, 1.02, region_titles[region], ha='center', va='bottom', fontsize=14, transform=ax.get_xaxis_transform())
 # Label the axes - x ticks only show hemisphere, region names are annotated above each block
-ax.set_xticks(positions)
+ax.set_xticks(np.arange(len(paired_roi_labels)))
 ax.set_xticklabels([hemi_titles[roi.split('_')[0]] for roi in paired_roi_labels])
 ax.set_ylabel('Mean off-diagonal crossnobis distance')
 ax.legend(handles=[significant_handle, nonsignificant_handle], loc='lower right')
@@ -1077,10 +1072,10 @@ plt.show();
 
 ![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-rdm-permutation-output-1.png)
 
-Figure 2: **RDM Robustness Check**: mean off-diagonal crossnobis
+Figure 2: **RDM Robustness Check**: *mean off-diagonal crossnobis
 distance (dot) against a condition shuffled null distribution (violin)
 per ROI. Green color signifies that the ROI survived the robustness
-check.
+check.*
 
 </div>
 
@@ -1098,9 +1093,7 @@ expressing the crossnobis distances relative to the average position
 across all conditions ie. the center of all points in the
 representational space, which is 12-dimensional in this case. The
 computed PR is normalized using 11 dimensions since the above centering
-removes one dimension. If left V1d $\to$ V2d $\to$ OPA forms a
-processing hierarchy, PR (%) is expected to monotonically increase along
-the pathway.
+removes one dimension.
 
 <details class="code-fold">
 <summary>Compute participation ratio along the pathway</summary>
@@ -1160,8 +1153,8 @@ readable_names = {name: f'Left {region_titles[name.split("_")[1]]}' for name in 
 
 </div>
 
-This monotonic increase establishes the hierarchical nature of the
-hypothesized pathway.
+The monotonic increase in PR % establishes the processing hierarchy of
+the *left V1d $\to$ V2d $\to$ OPA* pathway.
 
 ### Multidimensional Scaling
 
@@ -1169,7 +1162,7 @@ Multidimensional scaling (MDS) projects each ROI’s 12-dimensional
 representational space down to 2 dimensions to visualize the
 relationship structure. Each point represents one condition (map
 $\times$ walking direction), and the distances between points reflect
-the dissimilarity of the population responses. Each ROI is Procrustes
+the dissimilarity of the population responses. Each ROI is procrustes
 aligned to the previous ROI along the pathway to aid comparison.
 Normalized MDS stress metric was computed to gauge how well 2 dimensions
 capture the whole structure of the representational space.
@@ -1185,7 +1178,7 @@ for stage, name in enumerate(pathway_rois):
     rdm_matrix = condition_rdm_objects[name].get_matrices()[0]
     condition_labels = condition_rdm_objects[name].pattern_descriptors['map_direction']
     # Scale the RDM down to 2 dimensions
-    mds_estimator = MDS(n_components=2, dissimilarity='precomputed', random_state=23, normalized_stress=True)
+    mds_estimator = MDS(n_components=2, dissimilarity='precomputed', random_state=23, normalized_stress=True, n_init=4)
     mds_coords = mds_estimator.fit_transform(rdm_matrix)
     # Align every ROI's MDS solution to the previous ROI along the pathway, for visualization only
     if stage == 0:
@@ -1243,16 +1236,9 @@ plt.show();
 
 </details>
 
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-
 <div id="fig-pathway-mds">
 
-![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-pathway-mds-output-2.png)
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-pathway-mds-output-1.png)
 
 Figure 3: **Areawise-MDS representational maps along the pathway**: *Top
 row colored by walking direction, bottom row colored by map (position of
@@ -1265,7 +1251,8 @@ None of the areas along the pathway clearly separate either of the two
 categorical conditions. The normalized MDS Stress metric is high and
 monotonically increases like PR which could imply two things:
 
-- The representational structure lives in a high dimensional space, or
+- The representational structure lives in a high dimensional space
+  especially for left OPA, or
 - The condition labels do not clearly capture what these areas are
   representing internally
 
@@ -1278,19 +1265,19 @@ current categorical labels thereby allowing better comparisons across
 groups. Nevertheless, the monotonic increase in normalized MDS stress is
 consistent with the hierarchical nature shown by PR. In order to
 determine the nature of this expansion in complexity of the
-representational space, the only avenue left is to perform partial RSA
-along the pathway.
+representational space, I chose to perform multiple regression RSA along
+the pathway.
 
 ## Validation of the Representational Map
 
-A representational map needs to be validated against physical structure
-of the stimulus set or behavioral/psychophysics
+A representational map needs to be validated against the structure of
+the stimulus set or behavioral/psychophysics
 readout\[@Noda_2024-03-22\]. Neither is available here so V1 and V2 are
 used as low-level-feature extractors for vision. Early visual areas (V1
 and V2) act like simple digital filters, stripping visual stimuli down
 to basic visual features such as edges, textures, orientation and
 spatial frequency\[@Hubel_1962, @Riesenhuber_1999\].  
-Multiple refression RSA (MR-RSA)\[@Bosch_2025\] was performed to control
+Multiple regression RSA (MR-RSA)\[@Bosch_2025\] was performed to control
 for low-level features using *left V1d* and *left V2d* RDMs. This
 allowed me to determine whether direction and map categorical RDMs
 explain unique variance in *left OPA* RDM. The variance inflation factor
@@ -1332,36 +1319,44 @@ readable_predictor_names = {'v1d': f'Left {region_titles["v1d"]}', 'v2d': f'Left
     .rename(readable_predictor_names)
     .rename_axis(None)
     .round(2)
+    .to_frame()
 )
 ```
 
 </details>
 
-<div id="tbl-vif">
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+&#10;    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+&#10;    .dataframe thead th {
+        text-align: right;
+    }
+</style>
 
-Table 1
-
-<div class="cell-output cell-output-display" execution_count="50">
-
-    Left V1d             1.16
-    Left V2d             1.07
-    Walking direction    1.22
-    Map                  1.09
-    Name: VIF, dtype: float64
+|                   | VIF  |
+|-------------------|------|
+| Left V1d          | 1.16 |
+| Left V2d          | 1.07 |
+| Walking direction | 1.22 |
+| Map               | 1.09 |
 
 </div>
 
-</div>
-
-Since the above predictors are fairly indipendent, the following two
+Since the above predictors are fairly independent, the following two
 models were built:
 
-- **Low-Level Model**: Using left V1d and V2d as predictors
-- **Hierarchical Model**: Using the primary visual areas plus direction
-  and map as predictors
+- **Low-Level Model**: Uses left V1d and V2d as predictors; assumes a
+  purely feed-forward network\[@Serre_2007\]
+- **Hierarchical Model**: Uses primary visual areas plus direction and
+  map as predictors
 
-These two models were then compared against *left OPA* representational
-structure using bootstrap method.
+The two models were then compared against *left OPA* representational
+structure using bootstrap method (`1000` iterations):
 
 <details class="code-fold">
 <summary>Code</summary>
@@ -1376,20 +1371,26 @@ hierarchical_rsa_model = rsatoolbox.model.ModelWeighted('hierarchical_model',
                                                         np.vstack([v1d_vec, v2d_vec, direction_vec, map_vec]))
 
 # Compare the low-level and hierarchical models using bootstrap
-results = rsatoolbox.inference.eval_bootstrap_pattern(
-    models = [low_level_model, hierarchical_rsa_model],
-    data = condition_rdm_objects['lh_opa'],
-    N = 1000
-)
+# Suppress eval_bootstrap_pattern's hardcoded tqdm progress bar, which writes to stderr
+with contextlib.redirect_stderr(io.StringIO()):
+    results = rsatoolbox.inference.eval_bootstrap_pattern(
+        models = [low_level_model, hierarchical_rsa_model],
+        data = condition_rdm_objects['lh_opa'],
+        N = 1000
+    )
 
 # Store the result into a tidy DataFrame
 model_labels = ['Low-Level model\n(V1d + V2d)', 'Hierarchical model\n(+ Direction + Map)']
 bootstrap_df = pd.DataFrame(results.evaluations, columns=model_labels).melt(var_name='Model', value_name='Cosine Similarity')
 
-# Plot the mean cosine similarity per model
+# Compute the 2.5th/97.5th percentile of the bootstrap distribution
+def percentile_ci_95(x):
+    return np.percentile(x, 2.5), np.percentile(x, 97.5)
+
+# Plot the mean cosine similarity per model with 95% CI error bars
 fig, ax = plt.subplots(figsize=(6, 5))
 sns.pointplot(data=bootstrap_df, x='Model', y='Cosine Similarity', hue='Model', palette='colorblind',
-              legend=False, errorbar='sd', capsize=0.2, linestyle='none', ax=ax)
+              legend=False, errorbar=percentile_ci_95, capsize=0.2, linestyle='none', ax=ax)
 for i, mean in enumerate(results.get_means()):
     ax.text(i + 0.05, mean, f'{mean:.3f}', ha='left', va='center', fontsize=9)
 ax.set_ylabel('Mean Cosine Similarity to left OPA RDM')
@@ -1400,35 +1401,107 @@ plt.show();
 
 </details>
 
-
-      0%|          | 0/1000 [00:00<?, ?it/s]
-     10%|█         | 103/1000 [00:00<00:00, 1023.25it/s]
-     22%|██▏       | 220/1000 [00:00<00:00, 1103.76it/s]
-     33%|███▎      | 331/1000 [00:00<00:00, 1066.39it/s]
-     45%|████▍     | 446/1000 [00:00<00:00, 1094.36it/s]
-     56%|█████▌    | 558/1000 [00:00<00:00, 1099.53it/s]
-     68%|██████▊   | 676/1000 [00:00<00:00, 1122.79it/s]
-     79%|███████▉  | 794/1000 [00:00<00:00, 1138.08it/s]
-     91%|█████████ | 908/1000 [00:00<00:00, 1126.94it/s]
-    100%|██████████| 1000/1000 [00:00<00:00, 1105.77it/s]
-
 <div id="fig-mr-rsa">
 
-![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mr-rsa-output-2.png)
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mr-rsa-output-1.png)
 
-Figure 4: **MR-RSA model comparison**: *RDM prediction accuracy for left
-OPA, low-level vs hierarchical model*
+Figure 4: **MR-RSA model comparison**: *Mean Cosine Similarity with left
+OPA RDM, low-level vs hierarchical model*
 
 </div>
 
-<a href="#fig-mr-rsa" class="quarto-xref">Figure 4</a> shows the
-hierarchical model scores numerically higher than the low-level model,
-but a pairwise test between the two shows this difference is not
-significant (uncorrected *p* = 0.29). The noise ceiling is omitted here
-since it collapses to a trivial 1.0 for a single-subject RDM, offering
-no real information.
+<a href="#fig-mr-rsa" class="quarto-xref">Figure 4</a> shows that
+hierarchical model is more similar to left OPA RDM than the low-level
+model, but the 95% confidence intervals overlap. The following
+interpretations can be made:
+
+- Left OPA’s representational structure is built from features which are
+  dependent on the low-level features used by V1 and V2. Thus the
+  concerns put forth by \[@Epstein_2019\] regarding the overlapping
+  nature of sensitives of scene selective areas to both low-level
+  features and higher-order processes should be explored in more detail.
+- The coarse categorical stimuli information provided with the dataset
+  may be insufficient to answer questions about scene areas. The bare
+  nature of the scene itself may be contributing to the flat nature of
+  the scene area RDMs. The risk of such highly constrained stimuli thus
+  go beyond being generalizable to natural scene
+  stimuli\[@Epstein_2019\].
+- The number of voxels may not be sufficient to allow single subject
+  analysis in this dataset.
+
+Example stimulus videos are provided as supplementary material by both
+\[@Zhang_2020\] and \[@Zhang_2022a\] but do not cover all 12
+map-direction combinations. I hereby suggest a plan to work around this
+limitation by replacing the characters with uniform color pixels while
+preserving the character silhouettes. The modified video can then serve
+as a good proxy for the original stimulus structure allowing extracttion
+of exact low-level features shown to the participant.
 
 ## Appendix
+
+<details class="code-fold">
+<summary>Voxel counts: native atlas mask, post-transform, post-MAD
+exclusion</summary>
+
+``` python
+# Build the table tracking numbers across different stages in preprocessing
+voxel_count_rows = [
+    {
+        'ROI': f'{hemi_titles[name.split("_")[0]]} {region_titles[name.split("_")[1]]}',
+        'Native': stage_counts['native'],
+        'Post-Transform': stage_counts['post_transform'],
+        'Post-MAD': roi_voxel_counts[name],
+    }
+    for name, stage_counts in roi_voxel_counts_by_stage.items()
+]
+pd.DataFrame(voxel_count_rows).set_index('ROI')
+```
+
+</details>
+
+<div id="tbl-voxel-counts">
+
+Table 1: **Voxel counts per ROI** across processing stages: *atlas mask,
+post-transform to subject native space, and post-MAD outlier exclusion*
+
+<div class="cell-output cell-output-display" execution_count="27">
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+&#10;    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+&#10;    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+
+|           | Native | Post-Transform | Post-MAD |
+|-----------|--------|----------------|----------|
+| ROI       |        |                |          |
+| Left PPA  | 1588   | 233            | 232      |
+| Left OPA  | 2220   | 290            | 272      |
+| Left MPA  | 1405   | 246            | 236      |
+| Left V1d  | 1505   | 184            | 171      |
+| Left V1v  | 1537   | 190            | 172      |
+| Left V2d  | 1654   | 229            | 215      |
+| Left V2v  | 1445   | 222            | 208      |
+| Right PPA | 1869   | 262            | 254      |
+| Right OPA | 2247   | 369            | 360      |
+| Right MPA | 1648   | 234            | 227      |
+| Right V1d | 1685   | 324            | 288      |
+| Right V1v | 1386   | 243            | 227      |
+| Right V2d | 1512   | 292            | 283      |
+| Right V2v | 1571   | 276            | 254      |
+
+</div>
+
+</div>
+
+</div>
 
 <details class="code-fold">
 <summary>MDS stress across a range of dimensions</summary>
@@ -1441,7 +1514,7 @@ for name in pathway_rois:
     # Extract the squared crossnobis distance matrix
     rdm_matrix = condition_rdm_objects[name].get_matrices()[0]
     for n_dims in component_range:
-        mds_estimator = MDS(n_components=n_dims, dissimilarity='precomputed', random_state=23, normalized_stress=True)
+        mds_estimator = MDS(n_components=n_dims, dissimilarity='precomputed', random_state=23, normalized_stress=True, n_init=4)
         mds_estimator.fit(rdm_matrix)
         stress_rows.append({'roi': name, 'n_components': n_dims, 'stress': mds_estimator.stress_})
 stress_scree_df = pd.DataFrame(stress_rows)
@@ -1452,86 +1525,18 @@ for name in pathway_rois:
     roi_data = stress_scree_df.query('roi == @name')
     ax.plot(roi_data['n_components'], roi_data['stress'], marker='o', label=f'Left {region_titles[name.split("_")[1]]}')
 ax.set_xlabel('Number of dimensions')
-ax.set_ylabel('Normalized stress')
+ax.set_ylabel('Normalized MDS stress')
 ax.legend()
 plt.show();
 ```
 
 </details>
 
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-    C:\ProgramData\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
-      warnings.warn(
-
 <div id="fig-mds-stress-scree">
 
-![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mds-stress-scree-output-2.png)
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mds-stress-scree-output-1.png)
 
-Figure 5: **Normalized MDS stress vs. number of dimensions**: *for each
-ROI along the pathway*
+Figure 5: **Normalized MDS stress vs. number of dimensions**
 
 </div>
 
