@@ -105,7 +105,7 @@ import ants
 from templateflow import api as tflow
 from scipy import ndimage
 from scipy.spatial.transform import Rotation
-from scipy.stats import mode, norm
+from scipy.stats import mode, norm, false_discovery_control
 from scipy.spatial import procrustes
 from scipy.spatial.distance import squareform
 from nilearn.masking import compute_epi_mask, intersect_masks
@@ -411,6 +411,62 @@ Participant `26`’s raw DICOM data was extracted, converted to NIfTI
 format\[@Gorgolewski_2016\]. The resulting BIDS dataset was then
 preprocessed using `fMRIPrep`\[@Esteban_2019\] with FreeSurfer surface
 reconstruction\[@Dale_1999; @Fischl_2000; @Fischl_2002; @Segonne_2004\].
+Same data quality metrics which were computed for the raw data are
+computed again utilizing fMRIPrep preprocessed output:
+
+<details class="code-fold">
+<summary>Preprocessed data quality metrics</summary>
+
+``` python
+# Initialize the subject chosen and preprocessed data folder
+SUB = 26
+preprocessed_path = data_path / "derivatives" / f"sub-{SUB}"
+
+# Pull mean FD and SD(DVARS) per run from fMRIPrep's estimates
+run_metrics = []
+for run in range(1, 5):
+    timeseries_confounds_path = preprocessed_path / "func" / f"sub-{SUB}_task-sm_run-{run}_desc-confounds_timeseries.tsv"
+    timeseries_confounds = pd.read_table(timeseries_confounds_path)
+    # Fill the NaN values of the first frame with 0
+    run_confounds = timeseries_confounds[['framewise_displacement', 'dvars']].fillna(0)
+    run_metrics.append({'mean_fd': run_confounds['framewise_displacement'].mean(),
+                         'sd_dvars': run_confounds['dvars'].std()})
+
+# Display the metrics per run
+preprocessed_metrics = (pd.DataFrame(run_metrics)
+                         .rename(columns = {'mean_fd': 'Mean FD', 'sd_dvars': 'SD(DVARS)'})
+                         .set_index(pd.RangeIndex(1, 5, name = 'Run')))
+preprocessed_metrics
+```
+
+</details>
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+&#10;    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+&#10;    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+
+|     | Mean FD  | SD(DVARS) |
+|-----|----------|-----------|
+| Run |          |           |
+| 1   | 0.089406 | 2.812196  |
+| 2   | 0.082679 | 3.255792  |
+| 3   | 0.096141 | 3.078518  |
+| 4   | 0.095078 | 3.029735  |
+
+</div>
+
+The motion metrics are fairly stable across runs and confirms that the
+candidate selection algorithm computed on raw data aligns with fMRIPrep
+pipeline.
 
 ### ROI Atlases
 
@@ -564,9 +620,6 @@ samples in it is excluded.
 <summary>Build RDM using GLM effect sizes</summary>
 
 ``` python
-SUB = 26
-preprocessed_path = data_path / "derivatives" / f"sub-{SUB}"
-
 # Temporary manual cache by saving to disk
 rdm_cache_path = preprocessed_path / "condition_rdm_objects.pkl"
 
@@ -759,7 +812,8 @@ to avoid any domination of signal by outliers.
 
 The resulting per-run $\beta$ patterns are converted into a
 representational dissimilarity matrix (RDM) using crossnobis distance
-from `rsatoolbox`\[@Bosch_2025\]. GLM residuals were supplied for noise
+from **Python Representational Similarity Analysis toolbox**
+`rsatoolbox`\[@Bosch_2025\]. GLM residuals were supplied for noise
 normalization. A crosswise single-trial correlation approach which
 allows the diagonal of the matrix to serve as a trial-to-trial
 reliability measure\[@Noda_2024-03-22\] was not implemented due to the
@@ -892,6 +946,14 @@ low due to the inherent way crossnobis is computed.
 
 ## RDM Robustness Check
 
+The following robustness check performs a Monte Carlo simulation (`1000`
+permutations) of shuffled RDM matrices across conditions for each ROI.
+This provides a null distribution for the mean off-diagonal crossnobis
+distances. Since 14 total comparisons are done, p-values are corrected
+using *Benjamini-Hochberg FDR* (BH-FDR). The false positive rate is set
+at 5%, thus ROIs which pass this check show a RDM structure which is
+less likely from noise or chance.
+
 <details class="code-fold">
 <summary>Permutation test against a shuffled-label null</summary>
 
@@ -902,7 +964,7 @@ if perm_cache_path.exists():
     with open(perm_cache_path, 'rb') as f:
         permutation_df = pickle.load(f)
 else:
-    n_permutations = 200
+    n_permutations = 1000
     rng = np.random.default_rng(0)  # Ensure reproducibility of the permutation test
     permutation_results = {}
     for name, roi_data in roi_betas_data.items():
@@ -932,17 +994,21 @@ else:
             null_mean_distances.append(perm_mean_distance)
 
         null_mean_distances = np.array(null_mean_distances)
+        # Empirical one-tailed p-value
+        p_value = (np.sum(null_mean_distances >= mean_distance) + 1) / (n_permutations + 1)
         permutation_results[name] = {
             'mean_distance': mean_distance,
-            'null_mean': null_mean_distances.mean(),
-            'null_std': null_mean_distances.std(),
-            # 95% CI of the null distribution
+            'p_value': p_value,
+            # 95% CI of the null distribution, shown alongside the FDR-based significance call
             'null_ci_low': np.percentile(null_mean_distances, 2.5),
             'null_ci_high': np.percentile(null_mean_distances, 97.5),
             'null_mean_distances': null_mean_distances,
         }
     # Package into a dataframe
     permutation_df = pd.DataFrame(permutation_results).T
+
+    # Benjamini-Hochberg FDR correction across all 14 ROI-wise p-values
+    permutation_df['significant'] = false_discovery_control(permutation_df['p_value'].astype(float).values, method='bh') <= 0.05
 
     # Save so subsequent renders can skip recomputation
     with open(perm_cache_path, 'wb') as f:
@@ -956,15 +1022,21 @@ else:
 
 ``` python
 # Plot each ROI's null distribution of mean distance, against the computed mean distance
-# Define the colors for the null distribution and the computed mean distance
+# Define the colors for the null distribution and the FDR-significant/non-significant real distance
+# Significant/non-significant colors taken from seaborn's colorblind-safe palette
 null_color = '#8a8fa3'
-real_color = '#2924bd'
+significant_color, nonsignificant_color = sns.color_palette('colorblind')[2:4]
 # Arrange them as left and right pairs
 paired_roi_labels = [f'{hemi}_{region}' for region in region_order for hemi in ('lh', 'rh')]
+# Define spacing between ROIs and left and right hemisphere
+within_region_gap = 1.2
+between_region_gap = 2.2
+positions = np.array([i * between_region_gap + side * within_region_gap
+                       for i in range(len(region_order)) for side in (0, 1)])
 # Generate the violin plot
 fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
 violin_data = [permutation_df.loc[roi, 'null_mean_distances'] for roi in paired_roi_labels]
-parts = ax.violinplot(violin_data, positions=np.arange(len(paired_roi_labels)), showmedians=True)
+parts = ax.violinplot(violin_data, positions=positions, widths=within_region_gap * 0.8, showmedians=True)
 # Set the violin plot colors to the custom color defined above
 for body in parts['bodies']:
     body.set_facecolor(null_color)
@@ -972,21 +1044,29 @@ for body in parts['bodies']:
     body.set_alpha(0.6)  # Reduce opacity
 for key in ('cmedians', 'cbars', 'cmins', 'cmaxes'):
     parts[key].set_color(null_color)
-# Plot the computed mean distance for each ROI as a scatter point
+# Plot the computed mean distance for each ROI as a scatter point, colored by FDR-adjusted significance
 real_values = [permutation_df.loc[roi, 'mean_distance'] for roi in paired_roi_labels]
-ax.scatter(np.arange(len(paired_roi_labels)), real_values, color=real_color, s=80, zorder=3,
-           label='Computed mean distance')
-# Vertical separators between regions
-for sep in np.arange(1.5, len(paired_roi_labels), 2):
+dot_colors = [significant_color if permutation_df.loc[roi, 'significant'] else nonsignificant_color
+              for roi in paired_roi_labels]
+ax.scatter(positions, real_values, color=dot_colors, s=80, zorder=3)
+# Manual legend entries for the two significance colors
+significant_handle = plt.Line2D([], [], marker='o', linestyle='', color=significant_color,
+                                 label='p < BH-FDR threshold (q = 0.05)')
+nonsignificant_handle = plt.Line2D([], [], marker='o', linestyle='', color=nonsignificant_color,
+                                    label='p ≥ BH-FDR threshold')
+# Vertical separators between regions, placed midway through each region's between-region gap
+for i in range(len(region_order) - 1):
+    sep = (i * between_region_gap + within_region_gap + (i + 1) * between_region_gap) / 2
     ax.axvline(sep, color='lightgray', linewidth=1, zorder=0)
 # Region name centered above each pair-block
 for i, region in enumerate(region_order):
-    ax.text(2 * i + 0.5, 1.02, region_titles[region], ha='center', va='bottom', fontsize=14, transform=ax.get_xaxis_transform())
+    ax.text(i * between_region_gap + within_region_gap / 2, 1.02, region_titles[region],
+            ha='center', va='bottom', fontsize=14, transform=ax.get_xaxis_transform())
 # Label the axes - x ticks only show hemisphere, region names are annotated above each block
-ax.set_xticks(np.arange(len(paired_roi_labels)))
+ax.set_xticks(positions)
 ax.set_xticklabels([hemi_titles[roi.split('_')[0]] for roi in paired_roi_labels])
 ax.set_ylabel('Mean off-diagonal crossnobis distance')
-ax.legend(loc='lower right')
+ax.legend(handles=[significant_handle, nonsignificant_handle], loc='lower right')
 plt.show();
 ```
 
@@ -996,16 +1076,384 @@ plt.show();
 
 ![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-rdm-permutation-output-1.png)
 
-Figure 2: **RDM Robustness Check**: real mean off-diagonal crossnobis
-distance (dot) against a label-permuted null distribution (violin) per
-ROI
+Figure 2: **RDM Robustness Check**: mean off-diagonal crossnobis
+distance (dot) against a condition shuffled null distribution (violin)
+per ROI. Green color signifies that the ROI survived the robustness
+check.
 
 </div>
 
+From the surviving ROIs, the following hierarchical hypothesis is
+defined: *left V1d* $\to$ *left V2d* $\to$ *left OPA*.
+
 ## Visualizing the Representational Map
+
+### Participation Ratio
+
+The participation ratio (PR)\[@Gao_2017\] estimates the effective number
+of dimensions a ROI’s population response uses to separate the
+conditions. This requires a similarity matrix which is computed by
+expressing the crossnobis distances relative to the average position
+across all conditions ie. the center of all points in the
+representational space, which is 12-dimensional in this case. The
+computed PR is normalized using 11 dimensions since the above centering
+removes one dimension. If left V1d $\to$ V2d $\to$ OPA forms a
+processing hierarchy, PR (%) is expected to monotonically increase along
+the pathway.
+
+<details class="code-fold">
+<summary>Compute participation ratio along the pathway</summary>
+
+``` python
+pathway_rois = ['lh_v1d', 'lh_v2d', 'lh_opa']
+# Get the number of conditions
+n_conditions = len(condition_rdm_objects[pathway_rois[0]].pattern_descriptors['map_direction'])
+# Build the centering matrix
+centering_matrix = np.eye(n_conditions) - np.ones((n_conditions, n_conditions)) / n_conditions
+
+participation_ratios = {}
+for name in pathway_rois:
+    # Extract the 12x12 squared crossnobis distance matrix
+    D = condition_rdm_objects[name].get_matrices()[0]
+    # Compute the similarity matrix
+    S = -0.5 * centering_matrix @ D @ centering_matrix
+    # Get the eigenvalues of the similarity matrix
+    eigenvalues = np.linalg.eigvalsh(S)
+    # Clip tiny negative eigenvalues (floating-point noise) to zero
+    eigenvalues = np.maximum(eigenvalues, 0)
+    # Compute the raw participation ratio
+    pr = (eigenvalues.sum() ** 2) / (eigenvalues ** 2).sum()
+    # Normalize by the max achievable rank (n - 1, centering removes one dimension)
+    participation_ratios[name] = pr / (n_conditions - 1)
+
+# Display the PR as percentages
+readable_names = {name: f'Left {region_titles[name.split("_")[1]]}' for name in pathway_rois}
+(
+    pd.DataFrame({'ROI': [readable_names[name] for name in participation_ratios],
+                  'PR (%)': [np.round(pr * 100, 2) for pr in participation_ratios.values()]})
+    .set_index('ROI')
+    .rename_axis(None)
+)
+```
+
+</details>
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+&#10;    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+&#10;    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+
+|          | PR (%) |
+|----------|--------|
+| Left V1d | 30.71  |
+| Left V2d | 37.37  |
+| Left OPA | 40.03  |
+
+</div>
+
+This monotonic increase establishes the hierarchical nature of the
+hypothesized pathway.
+
+### Multidimensional Scaling
+
+Multidimensional scaling (MDS) projects each ROI’s 12-dimensional
+representational space down to 2 dimensions to visualize the
+relationship structure. Each point represents one condition (map
+$\times$ walking direction), and the distances between points reflect
+the dissimilarity of the population responses. Each ROI is Procrustes
+aligned to the previous ROI along the pathway to aid comparison.
+Normalized MDS stress metric was computed to gauge how well 2 dimensions
+capture the whole structure of the representational space.
+
+<details class="code-fold">
+<summary>Code</summary>
+
+``` python
+# Peform prodcrustus aligned MDS scaling of RDMs
+mds_rows = []
+pathway_reference = None
+for stage, name in enumerate(pathway_rois):
+    rdm_matrix = condition_rdm_objects[name].get_matrices()[0]
+    condition_labels = condition_rdm_objects[name].pattern_descriptors['map_direction']
+    # Scale the RDM down to 2 dimensions
+    mds_estimator = MDS(n_components=2, dissimilarity='precomputed', random_state=23, normalized_stress=True)
+    mds_coords = mds_estimator.fit_transform(rdm_matrix)
+    # Align every ROI's MDS solution to the previous ROI along the pathway, for visualization only
+    if stage == 0:
+        pathway_reference = mds_coords
+    else:
+        # Compute the procrustes alignment
+        mds_coords = procrustes(pathway_reference, mds_coords)[1]
+        # Grab the current ROI's aligned coordinates to use for next ROI's alignment
+        pathway_reference = mds_coords
+    # Build a tidy row per condition
+    for i, label in enumerate(condition_labels):
+        mds_rows.append({
+            'roi': name,
+            'x': mds_coords[i, 0],
+            'y': mds_coords[i, 1],
+            'direction': label.split('_')[1],
+            'map': label.split('_')[0],
+            'stress': mds_estimator.stress_,
+        })
+mds_df = pd.DataFrame(mds_rows)
+
+# Top row: colored by direction, Bottom row: colored by map
+direction_palette = sns.color_palette('colorblind', n_colors=4)
+map_palette = [sns.color_palette('colorblind')[i] for i in (0, 2, 3)]
+fig, axes = plt.subplots(2, len(pathway_rois), figsize=(5 * len(pathway_rois), 10), constrained_layout=True)
+for col, name in enumerate(pathway_rois):
+    stage_data = mds_df.query('roi == @name')
+    title = f'Left {region_titles[name.split("_")[1]]}\nStress: {stage_data["stress"].iloc[0]:.2f}'
+
+    # Top row: direction, circles
+    sns.scatterplot(stage_data, x='x', y='y', hue='direction', marker='o',
+                     palette=direction_palette, s=140, ax=axes[0, col],
+                     legend=(col == len(pathway_rois) - 1))
+    axes[0, col].set_title(title, fontsize=16)
+
+    # Bottom row: map, squares
+    sns.scatterplot(stage_data, x='x', y='y', hue='map', marker='s',
+                     palette=map_palette, s=140, ax=axes[1, col],
+                     legend=(col == len(pathway_rois) - 1))
+
+    for ax in (axes[0, col], axes[1, col]):
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+# Draw each row's legend outside the figure to the right
+direction_handles, direction_labels = axes[0, -1].get_legend_handles_labels()
+axes[0, -1].get_legend().remove()
+map_handles, map_labels = axes[1, -1].get_legend_handles_labels()
+axes[1, -1].get_legend().remove()
+fig.legend(direction_handles, direction_labels, loc='center left', bbox_to_anchor=(1.0, 0.75), fontsize=16, title='Direction', title_fontsize=16)
+fig.legend(map_handles, map_labels, loc='center left', bbox_to_anchor=(1.0, 0.25), fontsize=16, title='Map', title_fontsize=16)
+plt.show();
+```
+
+</details>
+
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+
+<div id="fig-pathway-mds">
+
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-pathway-mds-output-2.png)
+
+Figure 3: **Areawise-MDS representational maps along the pathway**: *Top
+row colored by walking direction, bottom row colored by map (position of
+the characters). Each column is Procrustes-aligned to the previous ROI’s
+MDS for comparison.*
+
+</div>
+
+None of the areas along the pathway clearly separate either of the two
+categorical conditions. The normalized MDS Stress metric is high and
+monotonically increases like PR which could imply two things:
+
+- The representational structure lives in a high dimensional space, or
+- The condition labels do not clearly capture what these areas are
+  representing internally
+
+The normalized MDS stress stabilizes at around two/three dimensions for
+the 3 ROIs as shown in [Appendix](#appendix). This rules out the first
+hypothesis. I am limited by the lack of subject specific stimulus files
+to extract features such as pixel similarity, angles at which each
+character is with respect to the simulated POV. These can substitute the
+current categorical labels thereby allowing better comparisons across
+groups. Nevertheless, the monotonic increase in normalized MDS stress is
+consistent with the hierarchical nature shown by PR. In order to
+determine the nature of this expansion in complexity of the
+representational space, the only avenue left is to perform partial RSA
+along the pathway.
 
 ## Validation of the Representational Map
 
+A representational map needs to be validated against the physical
+structure of the stimulus set or a behavioral/psychophysics
+readout\[@Noda_2024-03-22\]. Neither is available here so V1 is used as
+the low-level-feature model for vision. V1’s population code is well
+characterized as encoding retinotopic position and basic visual features
+(edges, orientation, spatial frequency). Partial RSA regression
+analysis\[@Bosch_2025\] is performed on left OPA’s RDM against left
+V1d’s RDM, left V2d’s RDM & map and walking-direction model RDMs.
+
+<details class="code-fold">
+<summary>Partial RSA Regression Analysis</summary>
+
+``` python
+# Fixed condition order for every model/neural RDM
+condition_order = list(condition_rdm_objects['lh_v1d'].pattern_descriptors['map_direction'])
+
+# Function which returns the vectorized form of the upper triangle
+def vectorize_rdm(rdm_obj, order):
+    rdm_df = pd.DataFrame(rdm_obj.get_matrices()[0],
+                           index=rdm_obj.pattern_descriptors['map_direction'],
+                           columns=rdm_obj.pattern_descriptors['map_direction'])
+    reordered = rdm_df.loc[order, order].values
+    return squareform(reordered, checks=False)
+
+# Build the 12x12 direction and map model RDMs with directions as primary and map as secondary
+directions_12 = [label.split('_')[1] for label in condition_order]
+maps_12 = [label.split('_')[0] for label in condition_order]
+direction_rdm_12 = (np.array(directions_12)[:, None] != np.array(directions_12)[None, :]).astype(int)
+map_rdm_12 = (np.array(maps_12)[:, None] != np.array(maps_12)[None, :]).astype(int)
+direction_vec = direction_rdm_12[np.triu_indices(len(condition_order), k=1)]
+map_vec = map_rdm_12[np.triu_indices(len(condition_order), k=1)]
+
+# Vectorize the V1d, V2d and OPA RDMs
+v1d_vec = vectorize_rdm(condition_rdm_objects['lh_v1d'], condition_order)
+v2d_vec = vectorize_rdm(condition_rdm_objects['lh_v2d'], condition_order)
+opa_vec = vectorize_rdm(condition_rdm_objects['lh_opa'], condition_order)
+
+# VIF for each predictor in {V1d, V2d, direction, map} to look for collinearity of factors
+predictors = pd.DataFrame({'v1d': v1d_vec, 'v2d': v2d_vec, 'direction': direction_vec, 'map': map_vec})
+vif_results = {}
+for col in predictors.columns:
+    other_cols = [c for c in predictors.columns if c != col]
+    r_squared = LinearRegression().fit(predictors[other_cols], predictors[col]).score(
+        predictors[other_cols], predictors[col])
+    vif_results[col] = 1 / (1 - r_squared)
+vif_table = pd.Series(vif_results).rename('VIF')
+vif_table
+
+# opa_rdm ~ v1d_rdm + v2d_rdm + direction_rdm + map_rdm
+fit = LinearRegression().fit(predictors, opa_vec)
+regression_results = pd.Series({
+    'v1d_coef': fit.coef_[0],
+    'v2d_coef': fit.coef_[1],
+    'direction_coef': fit.coef_[2],
+    'map_coef': fit.coef_[3],
+})
+regression_results
+```
+
+</details>
+
+    v1d_coef         -0.106849
+    v2d_coef          0.131328
+    direction_coef    0.001941
+    map_coef          0.000540
+    dtype: float64
+
 ## Appendix
+
+<details class="code-fold">
+<summary>MDS stress across a range of dimensions</summary>
+
+``` python
+# Fit MDS at every dimensionality from 1 to 11 per ROI
+component_range = range(1, n_conditions)
+stress_rows = []
+for name in pathway_rois:
+    # Extract the squared crossnobis distance matrix
+    rdm_matrix = condition_rdm_objects[name].get_matrices()[0]
+    for n_dims in component_range:
+        mds_estimator = MDS(n_components=n_dims, dissimilarity='precomputed', random_state=23, normalized_stress=True)
+        mds_estimator.fit(rdm_matrix)
+        stress_rows.append({'roi': name, 'n_components': n_dims, 'stress': mds_estimator.stress_})
+stress_scree_df = pd.DataFrame(stress_rows)
+
+# Plot the trend of normalized MDS stress as n_components is increased for each ROI
+fig, ax = plt.subplots(figsize=(8, 5), constrained_layout=True)
+for name in pathway_rois:
+    roi_data = stress_scree_df.query('roi == @name')
+    ax.plot(roi_data['n_components'], roi_data['stress'], marker='o', label=f'Left {region_titles[name.split("_")[1]]}')
+ax.set_xlabel('Number of dimensions')
+ax.set_ylabel('Normalized stress')
+ax.legend()
+plt.show();
+```
+
+</details>
+
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+    C:\Users\akash\miniforge3\envs\fmri\lib\site-packages\sklearn\manifold\_mds.py:677: FutureWarning: The default value of `n_init` will change from 4 to 1 in 1.9.
+      warnings.warn(
+
+<div id="fig-mds-stress-scree">
+
+![](scene-areas-hierarchy-rsa_files/figure-commonmark/fig-mds-stress-scree-output-2.png)
+
+Figure 4: **Normalized MDS stress vs. number of dimensions**: *for each
+ROI along the pathway*
+
+</div>
 
 ## References
