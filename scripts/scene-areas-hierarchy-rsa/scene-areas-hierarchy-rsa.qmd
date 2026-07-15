@@ -876,7 +876,7 @@ ax.legend(handles=[significant_handle, nonsignificant_handle], loc='lower right'
 plt.show();
 ```
 
-From the surviving ROIs, the following hierarchical hypothesis is defined: *left V1d* $\to$ *left V2d* $\to$ *left OPA*.  
+From the surviving ROIs, the following hierarchical hypothesis is defined: *left V1d* $\to$ *left V2d* $\to$ *left OPA*. The rationale for choosing only the dorsal primary areas is the OPA's greater sensitivity to lower visual field[@Epstein_2019].  
 
 ## Visualizing the Representational Map
 
