@@ -10,7 +10,7 @@ link-citations: true
 link-bibliography: true
 ---
 
-This post uses human fMRI data to answer the following question: [[Landscape/@Epstein_2019/@Epstein_2019 | Can the relationship between low-level features and the higher-level scene information and the hierarchical nature of scene-selective areas be demonstrated using RSA?]].  
+This post uses human fMRI data to answer the following question: [[Landscape/@Epstein_2019/@Epstein_2019|Can the relationship between low-level features and the higher-level scene information and the hierarchical nature of scene-selective areas be demonstrated using RSA?]].  
 
 ## Stimulus Description
 ### Experimental Setup
@@ -121,7 +121,7 @@ The raw data[@Zhang_2022] is structured as follows:
 For the purposes of this analysis, the following columns from the behavioral files are used:  
 
 - **Trial conditions**:
-    - *map* (column 2) - 3 out of 6 possible arrangements of the characters at 3 vertices of the square. No stim files are available to signify which 3 maps were psudorandomly chosen for each participant. Nevertheless, this condition is included since it categorically determines the spatial layout being simulated.
+    - *map* (column 2) - 3 out of 6 possible arrangements of the characters at 3 vertices of the square. No stim files are available to signify which 3 maps were pseudorandomly chosen for each participant. Nevertheless, this condition is included since it categorically determines the spatial layout being simulated.
     - *walking direction* (column 3) - The approach direction corresponding to the 4 sides of the square. This condition is included because it determines the overall structure of the scene.
     - *type of trial* (column 5) - Marks SM trials as `NA` and HND trials by the key pressed to answer whether the participant saw the character displayed on the screen nod their head.
     - *HND trial performance* (column 6) - included as a behavioral metric to be used for participant selection criteria.
@@ -760,15 +760,15 @@ plt.show();
 
 ### RDM Patterns
 
-All areas have a similar amount of voxels except for right OPA. The large drop from 800 voxels occured when the areas were transformed into subject-native MNI152 space. The MAD exclusion was modest but caught true outliers (see [Appendix](#appendix)).
+All areas have a similar amount of voxels except for right OPA. The large drop from 800 voxels occurred when the areas were transformed into subject-native MNI152 space. The MAD exclusion was modest but caught true outliers (see [Appendix](#appendix)).
 
 - **Left hemisphere**:
-    - **V1d, V1v**: The dissimalarity between direction 3 and directions 1, 2 is the highest across all areas. This suggests some kind of low-level feature is being encoded which might be used to simulate direction 3.
+    - **V1d, V1v**: The dissimilarity between direction 3 and directions 1, 2 is the highest across all areas. This suggests some kind of low-level feature is being encoded which might be used to simulate direction 3.
     - **V2d, V2v**: V2d has a highly dissimilar map $\times$ direction combination seen as a long striped pattern crossing direction boundaries. This suggests selectivity for visual features that recur across conditions. V2v is flat with no clear structure visible.
     - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no distinct block structure is visible. There may be some structure in MPA for direction 1 vs. other directions but the distinction is subtle.
 - **Right hemisphere**:
-    - **V1d, V1v**: The dissimalarity between directions 3, 4 and directions 1, 2 is clear. This loosely matches the structure seen in the corresponding left hemisphere. In both hemispheres the ventral area structure is more distinct as compared to dorsal which is interesting since the retinotopic maps of ventral areas cover the upper visual fields, but the characters were arranged on the ground, mostly in the lower visual field. One possible explanation could be linked to the placement position of the LCD monitor.
-    - **V2d, V2v**: V2d shows greater dissimalrity between direction 3 and direction 4 but not for all map conditions. V2v shows a similar structure for direction 1 against all 3 directions. This is difficult to interpret since the stim files which could show the exact arrangement of characters is not available. One possible explanation could be related to the different color & style of clothes worn by the characters.
+    - **V1d, V1v**: The dissimilarity between directions 3, 4 and directions 1, 2 is clear. This loosely matches the structure seen in the corresponding left hemisphere. In both hemispheres the ventral area structure is more distinct as compared to dorsal which is interesting since the retinotopic maps of ventral areas cover the upper visual fields, but the characters were arranged on the ground, mostly in the lower visual field. One possible explanation could be linked to the placement position of the LCD monitor.
+    - **V2d, V2v**: V2d shows greater dissimilarity between direction 3 and direction 4 but not for all map conditions. V2v shows a similar structure for direction 1 against all 3 directions. This is difficult to interpret since the stim files which could show the exact arrangement of characters is not available. One possible explanation could be related to the different color & style of clothes worn by the characters.
     - **PPA, MPA, OPA**: Off-diagonal distances are uniformly low and no distinct block structure is visible. OPA shows one highly dissimilar map(2) $\times$ direction(2 vs. 3) combination but rest of the structure is near flat.
 
 The overall textured structure is present as expected for primary and secondary areas, but the flat heatmaps of the scene-selective areas are contradictory to their function in scene processing[@Epstein_2019]. The low values of crossnobis distance are expected given the categorical nature of the trial conditions and one subject analysis. A robustness check using permutations with shuffled data across conditions is needed to confirm absence of any noise contribution.  
