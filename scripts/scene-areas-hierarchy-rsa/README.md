@@ -51,4 +51,5 @@ docker run --rm `
 ### Notes
 
 - `explore.py` — personal scratchpad for data exploration, not part of the reproducible pipeline.
+- `select_top_vertices.py` — selects the top-N most probable, spatially contiguous vertices per ROI label.
 - `scene-areas-hierarchy-rsa.bib` / `apa.csl` — bibliography and citation style
