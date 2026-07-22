@@ -1003,7 +1003,7 @@ The normalized MDS stress stabilizes at around two/three dimensions for the 3 RO
 
 ## Validation of the Representational Map
 
-A representational map needs to be validated against the structure of the stimulus set or behavioral/psychophysics readout[@Noda_2024-03-22]. Neither is available here so V1 and V2 are used as low-level-feature extractors for vision. Early visual areas (V1 and V2) act like simple digital filters, stripping visual stimuli down to basic visual features such as edges, textures, orientation and spatial frequency[@Hubel_1962, @Riesenhuber_1999].  
+A representational map needs to be validated against the structure of the stimulus set or behavioral/psychophysics readout[@Noda_2024-03-22]. Neither is available here so V1 and V2 are used as low-level-feature extractors for vision. Early visual areas (V1 and V2) act like simple digital filters, stripping visual stimuli down to basic visual features such as edges, textures, orientation and spatial frequency[@Hubel_1962; @Riesenhuber_1999].  
 Multiple regression RSA (MR-RSA)[@Bosch_2025] was performed to control for low-level features using *left V1d* and *left V2d* RDMs. This allowed me to determine whether direction and map categorical RDMs explain unique variance in *left OPA* RDM. The variance inflation factor (VIF) for the four predictors were as follows:
 
 ```{python}
@@ -1067,6 +1067,8 @@ hierarchical_rsa_model = rsatoolbox.model.ModelWeighted('hierarchical_model',
                                                         np.vstack([v1d_vec, v2d_vec, direction_vec, map_vec]))
 
 # Compare the low-level and hierarchical models using bootstrap
+# Set seed for reproducibility
+np.random.seed(23)
 # Suppress eval_bootstrap_pattern's hardcoded tqdm progress bar, which writes to stderr
 with contextlib.redirect_stderr(io.StringIO()):
     results = rsatoolbox.inference.eval_bootstrap_pattern(
@@ -1357,6 +1359,8 @@ direction_map_model = rsatoolbox.model.ModelWeighted('low_level_direction_map',
                                                        np.vstack([v1d_vec, v2d_vec, direction_vec, map_vec]))
 
 # Compare the two models using bootstrap
+# Set seed for reproducibility
+np.random.seed(23)
 # Suppress eval_bootstrap_pattern's hardcoded tqdm progress bar, which writes to stderr
 with contextlib.redirect_stderr(io.StringIO()):
     results = rsatoolbox.inference.eval_bootstrap_pattern(
