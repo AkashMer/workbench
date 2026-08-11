@@ -4,6 +4,7 @@
 
 - Files in the data folder of [CombinationAndCompetitionHeadingDirection](https://github.com/sharootonian/CombinationAndCompetitionHeadingDirection) repo were used:
     - data.csv
+    - dataconf.csv
 
 ### References
 
