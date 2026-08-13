@@ -81,3 +81,53 @@ bva_data.query("fb_time == trial_duration")
         .viewAmount.describe()
 )
 # All zeros, confirmed
+
+# EDA of both types of trials
+# General counts per subject across both trials
+sns.histplot(bva_dataconf, x='subj', hue='condition',
+                stat='proportion', common_norm=False, multiple='dodge')
+# Some participants have low number of trials, but they are equally low for both conditions
+# Like particiant s4, s5, s9, s10, s21(lowest)
+
+# Error distribuion across both conditions
+g = sns.displot(bva_dataconf, x='error', col='condition', kde=True)
+for ax, cond in zip(g.axes.flat, g.col_names):
+    subset = bva_dataconf.query("condition == @cond")
+    mean_val = subset.error.mean()
+    median_val = subset.error.median()
+    ax.axvline(mean_val, color='red', linestyle='--')
+    ax.axvline(median_val, color='green', linestyle='--')
+    ax.text(mean_val, ax.get_ylim()[1]*0.9, f'mean={mean_val:.1f}', color='red')
+    ax.text(median_val, ax.get_ylim()[1]*0.8, f'median={median_val:.1f}', color='green')
+# Both errors are right skewed with slightly shifted centers away from zero error
+# But the FB trials are more right skewed
+# This suggests that participants generally overestimated the target
+# Could this be due to the validity split of the fb_offset
+# Since validity labels are not present, I will use label valid for gaussian (0, 30) +/- 3SD
+plot_data = bva_dataconf.assign(
+    cue_validity=lambda d: np.where(d.fb_offset.abs() <= 90, 'valid', 'nonvalid')
+)
+g = sns.displot(plot_data, x='error', row='cue_validity', col='condition', kde=True)
+for (row_val, col_val), ax in g.axes_dict.items():
+    subset = plot_data.query("condition == @col_val & cue_validity == @row_val")
+    mean_val = subset.error.mean()
+    median_val = subset.error.median()
+    ax.axvline(mean_val, color='red', linestyle='--')
+    ax.axvline(median_val, color='green', linestyle='--')
+    ax.text(mean_val, ax.get_ylim()[1]*0.9, f'mean={mean_val:.1f}', color='red')
+    ax.text(median_val, ax.get_ylim()[1]*0.8, f'median={median_val:.1f}', color='green')
+# Still slghtly right skewed but much less than FB trials with valid cues
+
+# How does error relate to target value?
+# Bin the target into 10 bins of 36 degrees each
+plot_data = plot_data.assign(target_bin=pd.cut(plot_data.target, bins=10, precision=0))
+# Plot across both condition and cue validity
+g = sns.FacetGrid(plot_data, col='condition', row='cue_validity')
+g.map(sns.boxplot, 'target_bin', 'error')
+g.set(xticklabels=[])
+g.set_axis_labels('target (binned, low → high)', 'error')
+# Error's variance grows with target angle
+# => the variance of error is a function of target angle
+# ie. larger the self-motion movement, larger errors
+# => less reliability of the proprioceptory/vestibular senses for larger movements
+# Thus, a naive forced fusion model is not the right choice here
