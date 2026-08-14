@@ -131,3 +131,69 @@ g.set_axis_labels('target (binned, low → high)', 'error')
 # ie. larger the self-motion movement, larger errors
 # => less reliability of the proprioceptory/vestibular senses for larger movements
 # Thus, a naive forced fusion model is not the right choice here
+
+# Subject level distribution of error variable
+subj_plot_data = plot_data.query("condition == 'noFB' | cue_validity == 'valid'")
+g = sns.displot(subj_plot_data, x='error', col='subj', col_wrap=6,
+                    hue='condition', kind='kde', fill=True, alpha=0.4)
+# Check the corresponding means and medians along the subjects
+fig, ax = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+sns.pointplot(subj_plot_data, x='subj', y='error', hue='condition',
+              estimator='mean', ax=ax[0])
+sns.pointplot(subj_plot_data, x='subj', y='error', hue='condition',
+              estimator='median', ax=ax[1])
+# Confirms the right skewness and also that FB trials have greater errors across all subjects
+# even when the cue validity is good
+
+# Check if a similar pattern holds for noFB vs uniformly derived validity
+subj_plot_nonvalid_data = plot_data.query("condition == 'noFB' | cue_validity == 'nonvalid'")
+fig, ax = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+sns.pointplot(subj_plot_nonvalid_data, x='subj', y='error', hue='condition',
+              estimator='mean', ax=ax[0])
+sns.pointplot(subj_plot_nonvalid_data, x='subj', y='error', hue='condition',
+              estimator='median', ax=ax[1])
+# Similar pattern holds except fro s9; most likely from low trial count
+count_data = (
+    plot_data
+    .assign(group=lambda d: np.where(d.condition == 'noFB', 'noFB', d.cue_validity))
+    .groupby(['subj', 'group']).size().reset_index(name='count')
+)
+subj_order = sorted(count_data.subj.unique(), key=lambda s: int(s[1:]))
+sns.pointplot(count_data, x='subj', y='count', hue='group', order=subj_order)
+# s5, s9 and s21 have low trials across all types of trials
+
+# Confidence spread analysis
+# Confirm all trials had non-zero conf values
+plot_data.query('conf == 0') # 6, most in s14 for low error values
+# Get the same relationship of mean of conf across subjects and trial types
+fig, ax = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+sns.pointplot(subj_plot_data, x='subj', y='conf', hue='condition',
+              estimator='mean', ax=ax[0])
+sns.pointplot(subj_plot_data, x='subj', y='conf', hue='condition',
+              estimator='median', ax=ax[1])
+# and median
+fig, ax = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+sns.pointplot(subj_plot_nonvalid_data, x='subj', y='conf', hue='condition',
+              estimator='mean', ax=ax[0])
+sns.pointplot(subj_plot_nonvalid_data, x='subj', y='conf', hue='condition',
+              estimator='median', ax=ax[1])
+# Not a lot of difference, both track similarly across all subjects
+# Slightly lower confidence (higher conf) in case of nonvalid cues
+# Need to compare valid vs nonvalid cues
+fig, ax = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+sns.pointplot(plot_data, x='subj', y='conf', hue='cue_validity',
+              estimator='mean', ax=ax[0])
+sns.pointplot(plot_data, x='subj', y='conf', hue='cue_validity',
+              estimator='median', ax=ax[1])
+# Mean conf are higher ie. lower confidence for non-valid vs valid
+# But medians do not show a clear separation, possible outliers?
+sns.displot(plot_data, x='conf', col='cue_validity',
+                kind='kde', fill=True, alpha=0.4)
+# The distribution of nonvalid trials for conf is much more spread out
+# Suggesting an effect of outliers on means, which the medians are not sensitive to
+# Also, conf shows an interesting bump in the right tail for valid cue trials
+# Confirm against noFB trials
+sns.displot(plot_data, x='conf', col='condition',
+                kind='kde', fill=True, alpha=0.4)
+# Even those shows a smaller bump in the right tail
+# Needs more exploration regarding this phenomenon at subject level
