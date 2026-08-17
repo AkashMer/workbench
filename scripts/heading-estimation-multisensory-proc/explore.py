@@ -1,9 +1,10 @@
 # Initialize required libraries
 from pathlib import Path
-import requests
+
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
+import requests
 import seaborn as sns
 
 # Download the data files from the github repo
@@ -197,3 +198,70 @@ sns.displot(plot_data, x='conf', col='condition',
                 kind='kde', fill=True, alpha=0.4)
 # Even those shows a smaller bump in the right tail
 # Needs more exploration regarding this phenomenon at subject level
+sns.displot(subj_plot_data, x='conf', col='subj', col_wrap=6,
+            hue='condition', kind='kde', fill=True, alpha=0.4)
+# Several subjects show higher frequency in the 30-40 range while majority show higher frequency in 0-10
+# s2, s7, s9, s10, s12, s13, s21, s24, s31
+
+# Trial wise analysis of error, conf and trial_duration
+# Check the trial variable distribution
+sns.heatmap(pd.crosstab(plot_data.subj, plot_data.trial), yticklabels=1)
+# s4, s5, s7, s10: Truncated session
+# s9, s14, s21 (highest), s24: Scattered dropped trials
+# Some trials might have been excluded from analysis
+# Trial wise overall error, conf and trial_duration
+fig, ax = plt.subplots(3, 1, sharex=True)
+sns.lineplot(plot_data, x='trial', y='error', ax=ax[0])
+sns.lineplot(plot_data, x='trial', y='conf', ax=ax[1])
+sns.lineplot(plot_data, x='trial', y='trial_duration', ax=ax[2])
+# No trend across trials
+fig, ax = plt.subplots(3, 1, sharex=True)
+sns.lineplot(plot_data, x='trial', y='error', hue='condition', ax=ax[0])
+sns.lineplot(plot_data, x='trial', y='conf', hue='condition', ax=ax[1])
+sns.lineplot(plot_data, x='trial', y='trial_duration', hue='condition', ax=ax[2])
+# No trend but sessions were divided into noFB trials flanking the FB trials in the middle
+fig, ax = plt.subplots(3, 1, sharex=True)
+sns.lineplot(plot_data.query("condition == 'FB'"), x='trial', y='error', hue='cue_validity', ax=ax[0])
+sns.lineplot(plot_data.query("condition == 'FB'"), x='trial', y='conf', hue='cue_validity', ax=ax[1])
+sns.lineplot(plot_data.query("condition == 'FB'"), x='trial', y='trial_duration', hue='cue_validity', ax=ax[2])
+# Again no trend, but fb_offset assignment was random across the FB trials
+# Confirm this pattern holds at subject level as well
+sns.relplot(bva_dataconf, x='trial', y='error', col='subj', col_wrap=6, kind='line') # No trend even at subject level
+sns.relplot(bva_dataconf, x='trial', y='conf', col='subj', col_wrap=6, kind='line') # No trial order trend, but differing min/max
+# most likely points toward temperament of individual subjects
+sns.relplot(bva_dataconf, x='trial', y='trial_duration', col='subj', col_wrap=6, kind='line') # No trend even at subject level
+
+# Trial duration analysis by condition
+# Compare trial duration across the three conditions
+sns.displot(plot_data.assign(group=lambda d: np.where(d.condition == 'noFB', 'noFB', d.cue_validity)),
+            x='trial_duration', col='group', kde=True)
+# All three are similar with peaks around 4000-5000 msec and right skewed
+# Compute post feedback response time to check how it distributes across valid and nonvalid trials
+plot_data = plot_data.eval("post_fb_rt = trial_duration - fb_time")
+# Compare distribution across both cue validities
+sns.displot(plot_data.query("condition == 'FB'"), x='post_fb_rt', col='cue_validity',
+                kind='kde', fill=True, alpha=0.4)
+# Post-feedback response time does not depend on cue validity
+
+# viewAmount Analysis
+fb_data = plot_data.assign(viewAmount_bin=pd.cut(plot_data.viewAmount, bins=10, precision=0))
+fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+sns.pointplot(fb_data, x='viewAmount_bin', y='trial_duration', errorbar='se', ax=ax[0,0])
+sns.pointplot(fb_data, x='viewAmount_bin', y='target', errorbar='se', ax=ax[0,1])
+sns.pointplot(fb_data, x='viewAmount_bin', y='error', errorbar='se', ax=ax[1,0])
+sns.pointplot(fb_data, x='cue_validity', y='viewAmount', errorbar='se', ax=ax[1,1])
+for a in [ax[0,0], ax[0,1], ax[1,0]]:
+    a.tick_params(axis='x', rotation=45)
+# trial_duration is inversely proportional which makes sense based on how viewAmount is defined
+# Error and cue_validity do not so much difference/trend
+# Lower targets have lower viewAmount is interesting
+sns.scatterplot(fb_data, x='target', y='viewAmount', alpha=0.3)
+# This shows lower targets, the viewAmount is constrained by the target (grouping)
+# But for higher targets, viewAmount plateus instead of showing any trend
+
+# To summarize:
+# error vs condition : FB > noFB, both right-skewed
+# error vs cue_validity : nonvalid closer to noFB
+# error vs target (binned) : variance increases with target
+# error vs subj by condition : FB error consistently above noFB per subject (valid cues); inconsistent for nonvalid
+# subject-wise conf : distinct per-subject => temperament
