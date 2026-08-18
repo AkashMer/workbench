@@ -265,3 +265,31 @@ sns.scatterplot(fb_data, x='target', y='viewAmount', alpha=0.3)
 # error vs target (binned) : variance increases with target
 # error vs subj by condition : FB error consistently above noFB per subject (valid cues); inconsistent for nonvalid
 # subject-wise conf : distinct per-subject => temperament
+
+# Confirm the relationship between SD(error) and target
+# ie. the relationship is plain linear or not
+ax = sns.pointplot(plot_data, x='target_bin', y='error', estimator=np.std, errorbar=None)
+ax.tick_params(axis='x', rotation=45) # Fairly linear
+# Across conditions?
+g = sns.FacetGrid(plot_data, col='condition', row='cue_validity')
+g.map(sns.pointplot, 'target_bin', 'error', estimator=np.std, errorbar=None)
+g.set(xticklabels=[])
+g.set_axis_labels('target (binned, low → high)', 'SD(error)')
+# Similarly linear, but less straight for low validity data
+# Confirm the exact relationship by fitting a line
+# Compute the SD(error) across target bins
+sd_summary = plot_data.groupby('target_bin').agg(
+    target_mid=('target', 'mean'),
+    sd_error=('error', 'std')
+).reset_index()
+slope_lin, intercept_lin = np.polyfit(sd_summary.target_mid, sd_summary.sd_error, 1)
+# Plot the fitted line and confirm intercept and slope
+ax = sns.scatterplot(sd_summary, x='target_mid', y='sd_error')
+ax.plot(sd_summary.target_mid, intercept_lin + slope_lin * sd_summary.target_mid,
+           color='red', label=f'slope = {slope_lin:.3f}, intercept = {intercept_lin:.2f}')
+ax.set_xlabel('target')
+ax.set_ylabel('SD(error)')
+ax.legend()
+# SD(error) intercept = 16.33, which is close to minimum value for SD(error)
+# => SD(error) has a minimal value but beyond that it linearly varies with target
+
