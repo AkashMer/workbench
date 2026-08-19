@@ -16,4 +16,4 @@
 2. Recreate the environment using `mamba env create -f environment.yml` from this folder.
 3. Run `heading-estimation-multisensory-proc.qmd` to recreate the post.
 
-*Note*: `explore.py` - Personal scratchpad for data exploration.
+*Note*: `explore.py`/`explore.R` - Personal scratchpad for data exploration.
