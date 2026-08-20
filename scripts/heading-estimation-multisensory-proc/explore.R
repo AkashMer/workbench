@@ -108,6 +108,26 @@ bind_rows(
   facet_wrap(~facet, ncol = 1)
 # Some participants have low number of trials, but they are equally low for all trial types
 # Like particiant s4, s5, s9, s10, s21(lowest)
+# How are the included trials distributed across each subject?
+eda_data %>%
+  count(subj, trial) %>%
+  ggplot(aes(x = trial, y = subj, fill = n)) +
+  geom_tile()
+# s4, s5, s7, s10: Truncated session
+# s9, s14, s21 (highest), s24: Scattered dropped trials
+# => Some trials might have been excluded from analysis
+# Thus any learning behavior analysis will need to exclude the subjects with high scattered dropped trials
+
+# Check how the sessions were structured
+ggplot(eda_data, aes(x = trial, y = condition, color = condition)) +
+  geom_point() +
+  scale_color_brewer(palette = "Dark2")
+# Each session had a FB block flanked by noFB blocks with 2 sessions in total (200 trials each)
+# Now across trial types which included fb reliability
+ggplot(eda_data, aes(x = trial, y = trial_type, color = trial_type)) +
+  geom_point() +
+  scale_color_brewer(palette = "Dark2")
+# reliable and unreliable fb trials are randomly interspersed in the FB trial block
 
 # Confirm the distribution of target
 eda_data %>%
@@ -164,103 +184,85 @@ ggplot(eda_data, aes(x = target_bin, y = respond)) +
   labs(x = "target", y = "respond")
 # Similar pattern across all trial types, but the uncertainity (variance) increases down
 # the trial types => even unreliable feedback is not being discounted completely
-# Key takeway: The noise in perception may need to be modeled by both condition and fb_validity
+# Key takeway: The noise in perception may need to be modeled by target, condition and fb_validity
 
-# Below this line, the code needs to be streamline with the new approach of going down the
-# column headings
-
-# Error distribuion across both conditions
-error_summary <- bva_dataconf %>%
-  group_by(condition) %>%
-  summarise(mean_val = mean(error), median_val = median(error))
-
-ggplot(bva_dataconf, aes(x = error)) +
-  geom_histogram(aes(y = after_stat(density))) +
-  geom_density() +
-  geom_vline(data = error_summary, aes(xintercept = mean_val), color = "red", linetype = "dashed") +
-  geom_vline(data = error_summary, aes(xintercept = median_val), color = "green", linetype = "dashed") +
-  facet_wrap(~condition)
-# Both errors are right skewed with slightly shifted centers away from zero error
-# But the FB trials are more right skewed
-# This suggests that participants generally overestimated the target
-# Could this be due to the validity split of the fb_offset
-# Since validity labels are not present, I will use label valid for gaussian (0, 30) +/- 3SD
-plot_data <- bva_dataconf %>%
-  mutate(cue_validity = if_else(abs(fb_offset) <= 90, "valid", "nonvalid"))
-
-validity_summary <- plot_data %>%
-  group_by(condition, cue_validity) %>%
-  summarise(mean_val = mean(error), median_val = median(error), .groups = "drop")
-
-ggplot(plot_data, aes(x = error)) +
-  geom_histogram(aes(y = after_stat(density))) +
-  geom_density() +
-  geom_vline(data = validity_summary, aes(xintercept = mean_val), color = "red", linetype = "dashed") +
-  geom_vline(data = validity_summary, aes(xintercept = median_val), color = "green", linetype = "dashed") +
-  facet_grid(cue_validity ~ condition)
-# Still slghtly right skewed but much less than FB trials with valid cues
-
-# How does error relate to target value?
-# Bin the target into 10 bins of 36 degrees each
-plot_data <- plot_data %>%
-  mutate(target_bin = cut(target, breaks = 10))
-# Plot across both condition and cue validity
-ggplot(plot_data, aes(x = target_bin, y = error)) +
+# Distribution of the error variable
+ggplot(eda_data, aes(x = error)) +
+  geom_histogram(binwidth = 20, color = "black", fill = "steelblue") +
+  geom_vline(xintercept = mean(eda_data$error), color = "#D55E00", linetype = "dashed") +
+  geom_vline(xintercept = median(eda_data$error), color = "#0072B2", linetype = "dashed") +
+  annotate("text", x = mean(eda_data$error), y = Inf, label = paste0("mean=", round(mean(eda_data$error), 1)),
+           color = "#D55E00", vjust = 2, hjust = -0.1) +
+  annotate("text", x = median(eda_data$error), y = Inf, label = paste0("median=", round(median(eda_data$error), 1)),
+           color = "#0072B2", vjust = 4, hjust = -0.1)
+# Right skewed with mean (18.1) > median (15.3): Why is error positively biased?
+# Does the positive bias hold across trial types?
+ggplot(eda_data, aes(x = error)) +
+  geom_histogram(binwidth = 20, color = "black", fill = "steelblue") +
+  geom_text(data = eda_data %>%
+                      group_by(trial_type) %>%
+                      summarise(mean_val = mean(error)),
+              aes(x = mean_val, y = Inf, label = paste0("mean=", round(mean_val, 1))),
+              color = "#D55E00", vjust = 2, hjust = -0.1) +
+  geom_text(data = eda_data %>%
+                      group_by(trial_type) %>%
+                      summarise(median_val = median(error)),
+              aes(x = median_val, y = Inf, label = paste0("median=", round(median_val, 1))),
+              color = "#0072B2", vjust = 4, hjust = -0.1) +
+  facet_wrap(~trial_type) +
+  labs(x = "error") +
+  scale_fill_brewer(palette = "Dark2")
+# Similar shape across trial types as well, with reliable FB trials the most skewed (mean - median = 3.1 vs. ~1.8)
+# Positive bias even noFB trials => behavioral tendency for overestimation
+# Does the positive bias stay constant across target bins?
+ggplot(eda_data, aes(x = target_bin, y = error)) +
   geom_boxplot() +
-  facet_grid(cue_validity ~ condition) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "target", y = "error")
+# Positive bias is maintained throughout, suggesting the bias is due to behavioral tendency for overestimation
+# The variance grows with target => perception noise depends on target value
+# Confirm if the same relationship exists across conditions and trial types
+# noFB vs FB
+ggplot(eda_data, aes(x = target_bin, y = error)) +
+  geom_boxplot() +
+  facet_wrap(~condition, ncol = 1) +
   theme(axis.text.x = element_blank()) +
-  labs(x = "target (binned, low -> high)", y = "error")
-# Error's variance grows with target angle
-# => the variance of error is a function of target angle
-# ie. larger the self-motion movement, larger errors
-# => less reliability of the proprioceptory/vestibular senses for larger movements
-# Thus, a naive forced fusion model is not the right choice here
+  labs(x = "target", y = "error")
+# Similar pattern holds across condition, but variance grows faster in FB trials
+# noFB vs reliable vs unreliable
+ggplot(eda_data, aes(x = target_bin, y = error)) +
+  geom_boxplot() +
+  facet_wrap(~trial_type, ncol = 1) +
+  theme(axis.text.x = element_blank()) +
+  labs(x = "target", y = "error")
+# Positive bias trend breaks slightly for unreliable FB trials
+# Variance grows fastest in unreliable FB trials, so the above deviation from trend could be a mixture of
+# low trial count and the variance effect
+# Key takeway: The noise in perception may need to be modeled by target, condition and fb_validity
+# Is the positive bias for error driven by subject level data?
+eda_data %>%
+  group_by(subj) %>%
+  summarise(mean_val = mean(error), median_val = median(error)) %>%
+  mutate(gap = mean_val - median_val) %>%
+  pivot_longer(cols = c(mean_val, median_val), names_to = "stat", values_to = "value") %>%
+  ggplot(aes(x = subj, y = value, color = stat, group = stat)) +
+  geom_point() +
+  geom_line() +
+  geom_text(data = . %>% distinct(subj, gap),
+            aes(x = subj, y = Inf, label = round(gap, 1)),
+            inherit.aes = FALSE, vjust = 1.5, size = 3, color = "black") +
+  geom_hline(yintercept = 0) +
+  scale_color_brewer(palette = "Dark2") +
+  theme_bw()
+# Majority of subjects have a positively biased error
+# Exception: s2, s5, s21 (s5 and s21 have low trial count)
+# Does the positive bias in error change over the course of a session?
+ggplot(eda_data, aes(x = trial, y = error)) +
+  geom_smooth()
+# Positively biased across sessions as well with lowest error in the beginning of the 1st session
 
-# Subject level distribution of error variable
-subj_plot_data <- plot_data %>%
-  filter(condition == "noFB" | cue_validity == "valid")
-
-ggplot(subj_plot_data, aes(x = error, fill = condition)) +
-  geom_density(alpha = 0.4) +
-  facet_wrap(~subj, ncol = 6)
-# Check the corresponding means and medians along the subjects
-subj_mean <- subj_plot_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = mean(error), .groups = "drop")
-subj_median <- subj_plot_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = median(error), .groups = "drop")
-
-ggplot(subj_mean, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-ggplot(subj_median, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-# Confirms the right skewness and also that FB trials have greater errors across all subjects
-# even when the cue validity is good
-
-# Check if a similar pattern holds for noFB vs uniformly derived validity
-subj_plot_nonvalid_data <- plot_data %>%
-  filter(condition == "noFB" | cue_validity == "nonvalid")
-
-subj_nonvalid_mean <- subj_plot_nonvalid_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = mean(error), .groups = "drop")
-subj_nonvalid_median <- subj_plot_nonvalid_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = median(error), .groups = "drop")
-
-ggplot(subj_nonvalid_mean, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-ggplot(subj_nonvalid_median, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-# Similar pattern holds except fro s9; most likely from low trial count
-count_data <- plot_data %>%
-  mutate(group = if_else(condition == "noFB", "noFB", cue_validity)) %>%
-  count(subj, group)
-
-ggplot(count_data, aes(x = subj, y = n, color = group, group = group)) +
-  geom_point() + geom_line()
-# s5, s9 and s21 have low trials across all types of trials
+# Below this line, the code needs to be streamlined with the new approach of going down the
+# column headings
 
 # Confidence spread analysis
 # Confirm all trials had non-zero conf values
