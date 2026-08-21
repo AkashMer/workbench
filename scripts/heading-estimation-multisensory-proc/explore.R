@@ -261,199 +261,191 @@ ggplot(eda_data, aes(x = trial, y = error)) +
   geom_smooth()
 # Positively biased across sessions as well with lowest error in the beginning of the 1st session
 
-# Below this line, the code needs to be streamlined with the new approach of going down the
-# column headings
+# Distribution of the trial_duration variable
+ggplot(eda_data, aes(x = trial_duration / 1000)) +
+  geom_histogram(color = "black", fill = "steelblue") +
+  geom_vline(xintercept = mean(eda_data$trial_duration) / 1000, color = "#D55E00", linetype = "dashed") +
+  geom_vline(xintercept = median(eda_data$trial_duration) / 1000, color = "#0072B2", linetype = "dashed") +
+  annotate("text", x = mean(eda_data$trial_duration) / 1000, y = Inf,
+           label = paste0("mean=", round(mean(eda_data$trial_duration) / 1000, 1)),
+           color = "#D55E00", vjust = 2, hjust = -0.1) +
+  annotate("text", x = median(eda_data$trial_duration) / 1000, y = Inf,
+           label = paste0("median=", round(median(eda_data$trial_duration) / 1000, 1)),
+           color = "#0072B2", vjust = 4, hjust = -0.1) +
+  labs(x = "trial_duration (sec)")
+# Right skewed with peak at 3-4 s, mean (4.5s) > median (4.1s) with a long tail
+# Does the structure hold across trial types?
+ggplot(eda_data, aes(x = trial_duration / 1000, fill = trial_type)) +
+  geom_histogram(color = "black") +
+  facet_wrap(~trial_type) +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(x = "trial_duration (sec)")
+# Similar structure holds across all trial types
+# Hypothesis: Target angle should drive trial duration until a certain threshold,
+# beyond which response time should dominate
+# Does target angle drive trial duration?
+ggplot(eda_data, aes(x = target_bin, y = trial_duration / 1000)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "target", y = "trial_duration (sec)")
+# Plot view is being driven by the one outlier at 50 sec
+# What is the structure of this outlier?
+eda_data %>%
+  filter(trial_duration / 1000 > 20) %>%
+  arrange(desc(trial_duration))
+# 8 in total: Subject 31 appears thrice; FB > noFB trials; majority of targets are > 120 (except 2)
+# errors are varied; # unreliable = reliable trials
+# Replot with the above 8 excluded
+eda_data %>%
+  filter(trial_duration / 1000 <= 20) %>%
+  ggplot(aes(x = target_bin, y = trial_duration / 1000)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "target", y = "trial_duration (sec)")
+# Monotonic increase across target bins; but the variance also increases (similar to respond/error)
+# Due to lack of response time column; error can be used as a loose proxy for this time
+# Check trial duration against error as a proxy for response time
+eda_data %>%
+  filter(trial_duration / 1000 <= 20) %>%
+  ggplot(aes(x = error, y = trial_duration / 1000)) +
+  geom_hex() +
+  labs(x = "error", y = "trial_duration (sec)")
+# No clear trend except low error trials had low trial duration
+# => error may not be a good proxy for response time
+# Another proxy for response time would be post fb response time = trial_duration - fb_time
+# But this depends on trial_duration itself, so the different may just track trial_duration
+# Does the pattern hold across subjects?
+eda_data %>%
+  filter(trial_duration / 1000 <= 20) %>%
+  ggplot(aes(x = subj, y = trial_duration / 1000)) +
+  geom_boxplot() +
+  labs(y = "trial_duration (sec)") +
+  theme_bw()
+# Fairly varied with some subjects having more longer trials than others
+# Could the same subjects have higher variance across trials
+# Trial duration across trials, per subject
+eda_data %>%
+  filter(trial_duration / 1000 <= 20) %>%
+  ggplot(aes(x = trial, y = trial_duration / 1000)) +
+  geom_line() +
+  geom_smooth() +
+  facet_wrap(~subj, ncol = 6) +
+  labs(y = "trial_duration (sec)")
+# Fairly similar across subjects, even those with more longer trials
+# => Trial duration only shows on meaningful trend with variance which could
+# be capturing the same behavioral effect as respond/error; the perception noise
+# Lack of a formal response time measure, any RT analysis cannot be done
 
-# Confidence spread analysis
-# Confirm all trials had non-zero conf values
-plot_data %>% filter(conf == 0) # 6, most in s14 for low error values
-# Get the same relationship of mean of conf across subjects and trial types
-conf_mean <- subj_plot_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = mean(conf), .groups = "drop")
-conf_median <- subj_plot_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = median(conf), .groups = "drop")
+# feedback columns are controlled variables, thus no further EDA needed
 
-ggplot(conf_mean, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-ggplot(conf_median, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-# and median
-conf_nonvalid_mean <- subj_plot_nonvalid_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = mean(conf), .groups = "drop")
-conf_nonvalid_median <- subj_plot_nonvalid_data %>%
-  group_by(subj, condition) %>%
-  summarise(val = median(conf), .groups = "drop")
-
-ggplot(conf_nonvalid_mean, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-ggplot(conf_nonvalid_median, aes(x = subj, y = val, color = condition, group = condition)) +
-  geom_point() + geom_line()
-# Not a lot of difference, both track similarly across all subjects
-# Slightly lower confidence (higher conf) in case of nonvalid cues
-# Need to compare valid vs nonvalid cues
-validity_conf_mean <- plot_data %>%
-  group_by(subj, cue_validity) %>%
-  summarise(val = mean(conf), .groups = "drop")
-validity_conf_median <- plot_data %>%
-  group_by(subj, cue_validity) %>%
-  summarise(val = median(conf), .groups = "drop")
-
-ggplot(validity_conf_mean, aes(x = subj, y = val, color = cue_validity, group = cue_validity)) +
-  geom_point() + geom_line()
-ggplot(validity_conf_median, aes(x = subj, y = val, color = cue_validity, group = cue_validity)) +
-  geom_point() + geom_line()
-# Mean conf are higher ie. lower confidence for non-valid vs valid
-# But medians do not show a clear separation, possible outliers?
-ggplot(plot_data, aes(x = conf, fill = cue_validity)) +
-  geom_density(alpha = 0.4) +
-  facet_wrap(~cue_validity)
-# The distribution of nonvalid trials for conf is much more spread out
-# Suggesting an effect of outliers on means, which the medians are not sensitive to
-# Also, conf shows an interesting bump in the right tail for valid cue trials
-# Confirm against noFB trials
-ggplot(plot_data, aes(x = conf, fill = condition)) +
-  geom_density(alpha = 0.4) +
-  facet_wrap(~condition)
-# Even those shows a smaller bump in the right tail
-# Needs more exploration regarding this phenomenon at subject level
-ggplot(subj_plot_data, aes(x = conf, fill = condition)) +
-  geom_density(alpha = 0.4) +
+# conf - subjective variable spread
+# Distribution of the conf variable
+ggplot(eda_data, aes(x = conf)) +
+  geom_histogram(color = "black", fill = "steelblue") +
+  geom_vline(xintercept = mean(eda_data$conf), color = "#D55E00", linetype = "dashed") +
+  geom_vline(xintercept = median(eda_data$conf), color = "#0072B2", linetype = "dashed") +
+  annotate("text", x = mean(eda_data$conf), y = Inf,
+           label = paste0("mean=", round(mean(eda_data$conf), 1)),
+           color = "#D55E00", vjust = 2, hjust = -0.1) +
+  annotate("text", x = median(eda_data$conf), y = Inf,
+           label = paste0("median=", round(median(eda_data$conf), 1)),
+           color = "#0072B2", vjust = 4, hjust = -0.1)
+# Most subjects were confident, but the higher uncertainity is varied
+# thus producing a high mean median difference => consistent with a self-report variable
+# A bump around 30-35 degrees
+# Is this consistent across trial types?
+ggplot(eda_data, aes(x = conf, fill = trial_type)) +
+  geom_histogram(color = "black") +
+  facet_wrap(~trial_type) +
+  scale_fill_brewer(palette = "Dark2")
+# Similar distribution across all 3 trial types
+# But the bump around 30-35 degrees appears in all three
+# Could the bump be subject driven?
+ggplot(eda_data, aes(x = subj, y = conf)) +
+  geom_boxplot() +
+  theme_bw()
+# Differing spreads across subjects => maybe coding temperaments
+# s7, s10, s12, s18, s24 have IQR boxes in the 20-35 degree range unlike other subjects
+# => subject driven bump in the overall distribution
+# Does conf show a trial-order trend per subject?
+ggplot(eda_data, aes(x = trial, y = conf)) +
+  geom_line() +
+  geom_smooth() +
   facet_wrap(~subj, ncol = 6)
-# Several subjects show higher frequency in the 30-40 range while majority show higher frequency in 0-10
-# s2, s7, s9, s10, s12, s13, s21, s24, s31
+# The temperament is consistent across trials for each subject
+# Does subjective conf match actual error magnitude?
+eda_data %>%
+  mutate(abs_error_bin = cut(abs(error), breaks = seq(0, 180, by = 20), include.lowest = TRUE)) %>%
+  ggplot(aes(x = abs_error_bin, y = conf)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "|error| (binned)", y = "conf")
+# No trend, but higher outliers for lower error values; this is unexpected since
+# a naive bayesian observer should be able to track the performance well
+# Does the calibration pattern differ between noFB and FB trials?
+eda_data %>%
+  mutate(abs_error_bin = cut(abs(error), breaks = seq(0, 180, by = 20), include.lowest = TRUE)) %>%
+  ggplot(aes(x = abs_error_bin, y = conf)) +
+  geom_boxplot() +
+  facet_wrap(~condition, ncol = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "|error| (binned)", y = "conf")
+# Similar pattern
+# What about across trial_types?
+eda_data %>%
+  mutate(abs_error_bin = cut(abs(error), breaks = seq(0, 180, by = 20), include.lowest = TRUE)) %>%
+  ggplot(aes(x = abs_error_bin, y = conf)) +
+  geom_boxplot() +
+  facet_wrap(~trial_type, ncol = 1) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "|error| (binned)", y = "conf")
+# Similar pattern
+# Does subjective conf relate to target ie task difficulty like respond/error?
+ggplot(eda_data, aes(x = target_bin, y = conf)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "target", y = "conf")
+# Increasing trend across target bins with increasing variance
+# => subjective conf is being updated based on prior dependent on target
+# Subjective conf depends on the target variable and not the objective error
+# which makes sense since it is a subjective measure => rational bayesian observer
 
-# Trial wise analysis of error, conf and trial_duration
-# Check the trial variable distribution
-plot_data %>%
-  count(subj, trial) %>%
-  ggplot(aes(x = trial, y = subj, fill = n)) +
-  geom_tile()
-# s4, s5, s7, s10: Truncated session
-# s9, s14, s21 (highest), s24: Scattered dropped trials
-# Some trials might have been excluded from analysis
-# Trial wise overall error, conf and trial_duration
-ggplot(plot_data, aes(x = trial, y = error)) + geom_smooth()
-ggplot(plot_data, aes(x = trial, y = conf)) + geom_smooth()
-ggplot(plot_data, aes(x = trial, y = trial_duration)) + geom_smooth()
-# No trend across trials
-ggplot(plot_data, aes(x = trial, y = error, color = condition)) + geom_smooth()
-ggplot(plot_data, aes(x = trial, y = conf, color = condition)) + geom_smooth()
-ggplot(plot_data, aes(x = trial, y = trial_duration, color = condition)) + geom_smooth()
-# No trend but sessions were divided into noFB trials flanking the FB trials in the middle
-fb_only <- plot_data %>% filter(condition == "FB")
-ggplot(fb_only, aes(x = trial, y = error, color = cue_validity)) + geom_smooth()
-ggplot(fb_only, aes(x = trial, y = conf, color = cue_validity)) + geom_smooth()
-ggplot(fb_only, aes(x = trial, y = trial_duration, color = cue_validity)) + geom_smooth()
-# Again no trend, but fb_offset assignment was random across the FB trials
-# Confirm this pattern holds at subject level as well
-ggplot(bva_dataconf, aes(x = trial, y = error)) +
-  geom_line() + facet_wrap(~subj, ncol = 6) # No trend even at subject level
-ggplot(bva_dataconf, aes(x = trial, y = conf)) +
-  geom_line() + facet_wrap(~subj, ncol = 6) # No trial order trend, but differing min/max
-# most likely points toward temperament of individual subjects
-ggplot(bva_dataconf, aes(x = trial, y = trial_duration)) +
-  geom_line() + facet_wrap(~subj, ncol = 6) # No trend even at subject level
-
-# Trial duration analysis by condition
-# Compare trial duration across the three conditions
-plot_data %>%
-  mutate(group = if_else(condition == "noFB", "noFB", cue_validity)) %>%
-  ggplot(aes(x = trial_duration)) +
-  geom_histogram(aes(y = after_stat(density))) +
-  geom_density() +
-  facet_wrap(~group)
-# All three are similar with peaks around 4000-5000 msec and right skewed
-# Compute post feedback response time to check how it distributes across valid and nonvalid trials
-plot_data <- plot_data %>%
-  mutate(post_fb_rt = trial_duration - fb_time)
-# Compare distribution across both cue validities
-plot_data %>%
+# Does viewAmount differ between reliable and unreliable feedback cues?
+# ie. Is attention affected by the reliability of the feedback?
+eda_data %>%
   filter(condition == "FB") %>%
-  ggplot(aes(x = post_fb_rt, fill = cue_validity)) +
-  geom_density(alpha = 0.4) +
-  facet_wrap(~cue_validity)
-# Post-feedback response time does not depend on cue validity
+  ggplot(aes(x = viewAmount, fill = trial_type)) +
+  geom_histogram(color = "black") +
+  facet_wrap(~trial_type) +
+  scale_fill_brewer(palette = "Dark2")
+# Similar structure across both trial types
+# Does attention vary with magnitude of the fb_offset?
+eda_data %>%
+  filter(condition == "FB") %>%
+  mutate(abs_offset_bin = cut(abs(fb_offset), breaks = seq(0, 180, by = 20), include.lowest = TRUE)) %>%
+  ggplot(aes(x = abs_offset_bin, y = viewAmount)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "|fb_offset| (binned)", y = "viewAmount")
+# Confirms the similar structure seen across trial types
+# Does attention to the feedback cue (viewAmount) affect post-hoc confidence?
+# Expectation: Lower viewAmount (higher attention) leads to lower conf (high confidence)
+eda_data %>%
+  filter(condition == "FB") %>%
+  ggplot(aes(x = viewAmount, y = conf, color = trial_type)) +
+  geom_point(alpha = 0.2) +
+  geom_smooth() +
+  scale_color_brewer(palette = "Dark2") +
+  labs(x = "viewAmount", y = "conf")
+# No trend in the densest parts of the plot, across either trial types
+# Does attention to the feedback cue (viewAmount) affect accuracy?
+eda_data %>%
+  filter(condition == "FB") %>%
+  mutate(viewAmount_bin = cut(viewAmount, breaks = seq(0, 100, by = 20), include.lowest = TRUE)) %>%
+  ggplot(aes(x = viewAmount_bin, y = abs(error))) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "viewAmount (binned)", y = "|error|")
+# Accuracy is higher (low |error|) for trials with low viewAmount with increasing variance
+# => abs(error) noise modelling should include viewAmount as well for FB trials
 
-# viewAmount Analysis
-fb_data <- plot_data %>%
-  mutate(viewAmount_bin = cut(viewAmount, breaks = 10))
-
-viewAmount_duration <- fb_data %>%
-  group_by(viewAmount_bin) %>%
-  summarise(mean_val = mean(trial_duration), se = sd(trial_duration) / sqrt(n()))
-viewAmount_target <- fb_data %>%
-  group_by(viewAmount_bin) %>%
-  summarise(mean_val = mean(target), se = sd(target) / sqrt(n()))
-viewAmount_error <- fb_data %>%
-  group_by(viewAmount_bin) %>%
-  summarise(mean_val = mean(error), se = sd(error) / sqrt(n()))
-viewAmount_by_validity <- fb_data %>%
-  group_by(cue_validity) %>%
-  summarise(mean_val = mean(viewAmount), se = sd(viewAmount) / sqrt(n()))
-
-ggplot(viewAmount_duration, aes(x = viewAmount_bin, y = mean_val)) +
-  geom_pointrange(aes(ymin = mean_val - se, ymax = mean_val + se)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggplot(viewAmount_target, aes(x = viewAmount_bin, y = mean_val)) +
-  geom_pointrange(aes(ymin = mean_val - se, ymax = mean_val + se)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggplot(viewAmount_error, aes(x = viewAmount_bin, y = mean_val)) +
-  geom_pointrange(aes(ymin = mean_val - se, ymax = mean_val + se)) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
-ggplot(viewAmount_by_validity, aes(x = cue_validity, y = mean_val)) +
-  geom_pointrange(aes(ymin = mean_val - se, ymax = mean_val + se))
-# trial_duration is inversely proportional which makes sense based on how viewAmount is defined
-# Error and cue_validity do not so much difference/trend
-# Lower targets have lower viewAmount is interesting
-ggplot(fb_data, aes(x = target, y = viewAmount)) +
-  geom_point(alpha = 0.3)
-# This shows lower targets, the viewAmount is constrained by the target (grouping)
-# But for higher targets, viewAmount plateus instead of showing any trend
-
-# To summarize:
-# error vs condition : FB > noFB, both right-skewed
-# error vs cue_validity : nonvalid closer to noFB
-# error vs target (binned) : variance increases with target
-# error vs subj by condition : FB error consistently above noFB per subject (valid cues); inconsistent for nonvalid
-# subject-wise conf : distinct per-subject => temperament
-
-# Confirm the relationship between SD(error) and target
-# ie. the relationship is plain linear or not
-target_sd <- plot_data %>%
-  group_by(target_bin) %>%
-  summarise(sd_val = sd(error))
-
-ggplot(target_sd, aes(x = target_bin, y = sd_val)) +
-  geom_point() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) # Fairly linear
-# Across conditions?
-condition_sd <- plot_data %>%
-  group_by(condition, cue_validity, target_bin) %>%
-  summarise(sd_val = sd(error), .groups = "drop")
-
-ggplot(condition_sd, aes(x = target_bin, y = sd_val)) +
-  geom_point() +
-  facet_grid(cue_validity ~ condition) +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "target (binned, low -> high)", y = "SD(error)")
-# Similarly linear, but less straight for low validity data
-# Confirm the exact relationship by fitting a line
-# Compute the SD(error) across target bins
-sd_summary <- plot_data %>%
-  group_by(target_bin) %>%
-  summarise(target_mid = mean(target), sd_error = sd(error))
-
-fit <- lm(sd_error ~ target_mid, data = sd_summary)
-slope_lin <- coef(fit)[["target_mid"]]
-intercept_lin <- coef(fit)[["(Intercept)"]]
-
-ggplot(sd_summary, aes(x = target_mid, y = sd_error)) +
-  geom_point() +
-  geom_smooth(method = "lm", se = FALSE, color = "red") +
-  labs(x = "target", y = "SD(error)",
-       title = paste0("slope = ", round(slope_lin, 3), ", intercept = ", round(intercept_lin, 2)))
-# SD(error) intercept = 16.33, which is close to minimum value for SD(error)
-# => SD(error) has a minimal value but beyond that it linearly varies with target
