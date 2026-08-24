@@ -2,6 +2,8 @@
 library(tidyverse)
 library(here)
 library(circular)
+library(boot)
+library(quantreg)
 
 # Download the data files from the github repo
 # 1. Get the data path
@@ -313,7 +315,7 @@ eda_data %>%
 # No clear trend except low error trials had low trial duration
 # => error may not be a good proxy for response time
 # Another proxy for response time would be post fb response time = trial_duration - fb_time
-# But this depends on trial_duration itself, so the different may just track trial_duration
+# But this depends on trial_duration itself, so the difference may just track trial_duration
 # Does the pattern hold across subjects?
 eda_data %>%
   filter(trial_duration / 1000 <= 20) %>%
@@ -332,9 +334,9 @@ eda_data %>%
   facet_wrap(~subj, ncol = 6) +
   labs(y = "trial_duration (sec)")
 # Fairly similar across subjects, even those with more longer trials
-# => Trial duration only shows on meaningful trend with variance which could
+# => Trial duration only shows a meaningful trend with variance which could
 # be capturing the same behavioral effect as respond/error; the perception noise
-# Lack of a formal response time measure, any RT analysis cannot be done
+# Lack of a formal response time measure => any RT analysis cannot be done
 
 # feedback columns are controlled variables, thus no further EDA needed
 
@@ -449,3 +451,117 @@ eda_data %>%
 # Accuracy is higher (low |error|) for trials with low viewAmount with increasing variance
 # => abs(error) noise modelling should include viewAmount as well for FB trials
 
+# Statistical Analysis (alpha set to 0.05)
+alpha <- 0.05
+
+# 1. Is target actually uniformly distributed in a circle?
+kuiper.test(circular(eda_data$target, units = "degrees"), alpha = alpha)
+# t-stat = 2.8768; critical value = 1.747 => Reject H0 => non uniform
+# Confirm across conditions
+# noFB trials
+eda_data %>%
+  filter(condition == "noFB") %>%
+  pull(target) %>%
+  circular(units = "degrees") %>%
+  kuiper.test(alpha = alpha)
+# t-stat = 1.8274; critical value = 1.747 => Reject H0 => non uniform 
+# FB trials
+eda_data %>%
+  filter(condition == "FB") %>%
+  pull(target) %>%
+  circular(units = "degrees") %>%
+  kuiper.test(alpha = alpha)
+# t-stat = 2.4396; critical value = 1.747 => Reject H0 => non uniform
+# Confirm using mean direction and concentration of values
+mean.circular(circular(eda_data$target, units = "degrees"))
+rho.circular(circular(eda_data$target, units = "degrees"))
+# Practically uniform, the power of the t-test was high due to so many trials
+
+# 2. Since respond's variance has same characteristics as error's variance,
+#    Is respond's variance coming directly from error?
+# ie. check if the last term in Var(respond) = var(target) + var(error) + 2 cov(target, error) -> 0
+cor.test(eda_data$target, eda_data$error)
+# cor = 0.03 with 95% conf interval [0.0133 0.0511]
+# Negligeble => var(respond) is tracking var(error) => error can be used as the predicting variable
+
+# 3. Is error variable truly positively biased?
+wilcox.test(eda_data$error, mu = 0)
+# p-value very small
+# Confirm by finding the bootstrapped CI
+median_error_boot <- boot(eda_data$error, function(data, i) median(data[i]), R = 2000)
+boot.ci(median_error_boot, type = "perc")
+# [14.79 15.88] (95%)
+# Statistically confirmed positive bias
+
+# 4. Does error stays constant across 20 degree target bins?
+target_slope_boot <- boot.rq(cbind(1, eda_data$target), eda_data$error, tau = 0.5, R = 2000)
+apply(target_slope_boot$B, 2, quantile, probs = c(0.025, 0.975))
+# Slope != 0; [0.009 0.021]; error itself increases slightly with increasing target
+# 5. Does the variance of error grow across 20 degree target bins?
+target_sd_boot_by_bin <- eda_data %>%
+  group_by(target_bin) %>%
+  group_modify(~ {
+    b <- boot(.x$error, function(data, i) sd(data[i]), R = 2000)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+ggplot(target_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "target (binned)", y = "SD(error) with 95% bootstrap CI")
+# Grows monotonically, with most CIs not overlapping
+# => error's location and spread both depend on target
+
+# 6. Does error's median differ between noFB and FB conditions?
+wilcox.test(error ~ condition, data = eda_data)
+# Very low p-value
+# Confirm using a 95% CI
+median_diff_boot <- boot(eda_data, function(data, i) {
+  d <- data[i, ]
+  median(d$error[d$condition == "FB"]) - median(d$error[d$condition == "noFB"])
+}, R = 2000)
+boot.ci(median_diff_boot, type = "perc")
+# CI difference of [3.031 5.099]
+# 7. Does error's variance differ between noFB and FB conditions?
+condition_sd_boot <- eda_data %>%
+  group_by(condition) %>%
+  group_modify(~ {
+    b <- boot(.x$error, function(data, i) sd(data[i]), R = 2000)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+condition_sd_boot
+#   condition    sd ci_low ci_high
+#   <fct>     <dbl>  <dbl>   <dbl>
+# 1 noFB       25.8   24.7    26.9
+# 2 FB         34.0   33.1    34.9
+# => error's location and spread both depend on condition
+
+# 8. Does error's median change with magnitude of fb_offset?
+fb_data <- eda_data %>%
+  filter(condition == "FB") %>%
+  mutate(abs_offset = abs(fb_offset))
+offset_slope_boot <- boot.rq(cbind(1, fb_data$abs_offset), fb_data$error, tau = 0.5, R = 2000)
+apply(offset_slope_boot$B, 2, quantile, probs = c(0.025, 0.975))
+# [0.041 0.068]
+# error grows with greater offset => unreliable trials lead to greater error
+# participant does not ignore the feedback even when unreliable
+# 9. Does error's variance grow with magnitude of fb_offset?
+fb_data <- fb_data %>%
+  mutate(abs_offset_bin = cut(abs_offset, breaks = seq(0, 180, by = 20), include.lowest = TRUE))
+offset_sd_boot_by_bin <- fb_data %>%
+  group_by(abs_offset_bin) %>%
+  group_modify(~ {
+    b <- boot(.x$error, function(data, i) sd(data[i]), R = 2000)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+ggplot(offset_sd_boot_by_bin, aes(x = abs_offset_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "|fb_offset| (binned)", y = "SD(error) with 95% bootstrap CI")
+# Increases at first and then plateaus at around 60 degrees of offset
+# => There is a cut off point to the effect of fb_offset on error's variance
+
+# Only problem with above statistical analysis: all subject was pooled
+# which assumes that all subjects share the same internal system
