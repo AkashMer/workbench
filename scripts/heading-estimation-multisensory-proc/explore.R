@@ -2,6 +2,7 @@
 library(tidyverse)
 library(here)
 library(circular)
+library(rmcorr)
 library(boot)
 library(quantreg)
 
@@ -451,8 +452,9 @@ eda_data %>%
 # Accuracy is higher (low |error|) for trials with low viewAmount with increasing variance
 # => abs(error) noise modelling should include viewAmount as well for FB trials
 
-# Statistical Analysis (alpha set to 0.05)
+# Statistical Analysis
 alpha <- 0.05
+R_boot <- 1000
 
 # 1. Is target actually uniformly distributed in a circle?
 kuiper.test(circular(eda_data$target, units = "degrees"), alpha = alpha)
@@ -476,83 +478,121 @@ eda_data %>%
 mean.circular(circular(eda_data$target, units = "degrees"))
 rho.circular(circular(eda_data$target, units = "degrees"))
 # Practically uniform, the power of the t-test was high due to so many trials
+# Confirm if almost similar concentration of target angles is present across each subject
+eda_data %>%
+  summarise(circular_rho = rho.circular(circular(target, units = "degrees")), .by = subj) %>%
+  mutate(is_outlier = abs(circular_rho - median(circular_rho)) > 2.5 * mad(circular_rho)) %>%
+  filter(is_outlier)
+# Only 3 subjects have larger concentration, but s7, s9 and s21 have known low trial count
 
 # 2. Since respond's variance has same characteristics as error's variance,
 #    Is respond's variance coming directly from error?
 # ie. check if the last term in Var(respond) = var(target) + var(error) + 2 cov(target, error) -> 0
-cor.test(eda_data$target, eda_data$error)
-# cor = 0.03 with 95% conf interval [0.0133 0.0511]
+rmcorr(subj, target, error, dataset = eda_data) # repeated measure to avoid pooling across subjects
+# cor = 0.03 with 95% conf interval [0.009 0.047]
 # Negligeble => var(respond) is tracking var(error) => error can be used as the predicting variable
 
 # 3. Is error variable truly positively biased?
 wilcox.test(eda_data$error, mu = 0)
 # p-value very small
-# Confirm by finding the bootstrapped CI
-median_error_boot <- boot(eda_data$error, function(data, i) median(data[i]), R = 2000)
+# Confirm by finding the bootstrapped CI across subjects and trials
+subjs <- unique(eda_data$subj)
+median_error_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ eda_data %>% filter(subj == .x))
+  median(samp$error)
+}, R = R_boot)
 boot.ci(median_error_boot, type = "perc")
-# [14.79 15.88] (95%)
+# [10.66 20.75] (95%)
 # Statistically confirmed positive bias
 
 # 4. Does error stays constant across 20 degree target bins?
-target_slope_boot <- boot.rq(cbind(1, eda_data$target), eda_data$error, tau = 0.5, R = 2000)
-apply(target_slope_boot$B, 2, quantile, probs = c(0.025, 0.975))
-# Slope != 0; [0.009 0.021]; error itself increases slightly with increasing target
+# Controlling for individual subjects
+error_slope_boot_by_bin <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ eda_data %>% filter(subj == .x))
+  coef(rq(error ~ target, tau = 0.5, data = samp))["target"]
+}, R = R_boot)
+boot.ci(error_slope_boot_by_bin, type = "perc")
+# Slope == 0; [-0.018 0.052]; confirms the EDA finding
 # 5. Does the variance of error grow across 20 degree target bins?
-target_sd_boot_by_bin <- eda_data %>%
+# Controlling for individual subjects
+error_sd_boot_by_bin <- eda_data %>%
   group_by(target_bin) %>%
   group_modify(~ {
-    b <- boot(.x$error, function(data, i) sd(data[i]), R = 2000)
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-ggplot(target_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
+ggplot(error_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "target (binned)", y = "SD(error) with 95% bootstrap CI")
-# Grows monotonically, with most CIs not overlapping
-# => error's location and spread both depend on target
+# Grows in two phases witch a plateau in the middle around 140 to 200 target angle
+# But consecutive beans have 95% CI overlap
+# => Variance of error ie. the perceptual uncerntainity does grow with target angle
+# but the trend is not linear
 
 # 6. Does error's median differ between noFB and FB conditions?
 wilcox.test(error ~ condition, data = eda_data)
 # Very low p-value
-# Confirm using a 95% CI
-median_diff_boot <- boot(eda_data, function(data, i) {
-  d <- data[i, ]
-  median(d$error[d$condition == "FB"]) - median(d$error[d$condition == "noFB"])
-}, R = 2000)
+# Confirm using a 95% CI controlled for subjects
+median_diff_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ eda_data %>% filter(subj == .x))
+  median(samp$error[samp$condition == "FB"]) - median(samp$error[samp$condition == "noFB"])
+}, R = R_boot)
 boot.ci(median_diff_boot, type = "perc")
-# CI difference of [3.031 5.099]
+# CI difference of [1.98 6.16]
 # 7. Does error's variance differ between noFB and FB conditions?
+# Controlled for subjects
 condition_sd_boot <- eda_data %>%
   group_by(condition) %>%
   group_modify(~ {
-    b <- boot(.x$error, function(data, i) sd(data[i]), R = 2000)
+    group_data <- .x
+    group_subjs <- unique(group_data$subj)
+    b <- boot(group_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ group_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
 condition_sd_boot
 #   condition    sd ci_low ci_high
 #   <fct>     <dbl>  <dbl>   <dbl>
-# 1 noFB       25.8   24.7    26.9
-# 2 FB         34.0   33.1    34.9
-# => error's location and spread both depend on condition
+# 1 noFB       25.8   21.5    29.7
+# 2 FB         34.0   29.8    38.0
+# => error's location and spread (very close) both depend on condition
 
 # 8. Does error's median change with magnitude of fb_offset?
+# Controlled for subjects
 fb_data <- eda_data %>%
   filter(condition == "FB") %>%
   mutate(abs_offset = abs(fb_offset))
-offset_slope_boot <- boot.rq(cbind(1, fb_data$abs_offset), fb_data$error, tau = 0.5, R = 2000)
-apply(offset_slope_boot$B, 2, quantile, probs = c(0.025, 0.975))
-# [0.041 0.068]
+offset_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ fb_data %>% filter(subj == .x))
+  coef(rq(error ~ abs_offset, tau = 0.5, data = samp))["abs_offset"]
+}, R = R_boot)
+boot.ci(offset_slope_boot, type = "perc")
+# [0.035 0.081]
 # error grows with greater offset => unreliable trials lead to greater error
-# participant does not ignore the feedback even when unreliable
+# participants do not ignore the feedback even when unreliable
 # 9. Does error's variance grow with magnitude of fb_offset?
+# Controlled for subjects
 fb_data <- fb_data %>%
   mutate(abs_offset_bin = cut(abs_offset, breaks = seq(0, 180, by = 20), include.lowest = TRUE))
 offset_sd_boot_by_bin <- fb_data %>%
   group_by(abs_offset_bin) %>%
   group_modify(~ {
-    b <- boot(.x$error, function(data, i) sd(data[i]), R = 2000)
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
@@ -563,5 +603,62 @@ ggplot(offset_sd_boot_by_bin, aes(x = abs_offset_bin, y = sd)) +
 # Increases at first and then plateaus at around 60 degrees of offset
 # => There is a cut off point to the effect of fb_offset on error's variance
 
-# Only problem with above statistical analysis: all subject was pooled
-# which assumes that all subjects share the same internal system
+# Thus error's variance needs to be modelled across:
+# 1. target (stimuli)
+# 2. condition (unisensory or multisensory)
+# 3. For multisensory, fb_offset
+# Error's location is dependent on both condition and fb_offset as well
+
+# 10. Does |error| (1/accuracy) change with viewAmount (attention to feedback)?
+# Plan is to use this property as a validation check for the models
+# Controlled for subjects
+accuracy_view_amount_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ fb_data %>% filter(subj == .x))
+  coef(rq(abs(error) ~ viewAmount, tau = 0.5, data = samp))["viewAmount"]
+}, R = R_boot)
+boot.ci(accuracy_view_amount_slope_boot, type = "perc")
+# [0.21 0.77]
+# Accuracy reduces as viewAmount grows ie. lower attention paid to the cue
+
+# 11. Does conf change with target (task difficulty)?
+# Controlled for subjects
+conf_target_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ eda_data %>% filter(subj == .x))
+  coef(rq(conf ~ target, tau = 0.5, data = samp))["target"]
+}, R = R_boot)
+boot.ci(conf_target_slope_boot, type = "perc")
+# [0.02 0.04]
+# 12. Does conf's variance also grow with target?
+# Controlled for subjects
+conf_sd_boot_by_bin <- eda_data %>%
+  group_by(target_bin) %>%
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$conf)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+ggplot(conf_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "target (binned)", y = "SD(conf) with 95% bootstrap CI")
+# All CIs overlap => conf's variance is not dependent on task difficulty
+# 13. Does conf track |error| ie. 1/accuracy?
+conf_error_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ eda_data %>% filter(subj == .x))
+  coef(rq(conf ~ abs(error), tau = 0.5, data = samp))["abs(error)"]
+}, R = R_boot)
+boot.ci(conf_error_slope_boot, type = "perc")
+# [-0.001 0.121] => conf does not track accuracy
+# Plan is to conf also in model validation
+
+# Model validations properties:
+# 1. Accuracy should reduces with viewAmount
+# 2. Some equivalent measure to conf for the model increased with target
+#    but does not change with model's accuracy
+
+# Next open question a model which tracks internal uncertainity
