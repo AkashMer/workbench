@@ -662,3 +662,12 @@ boot.ci(conf_error_slope_boot, type = "perc")
 #    but does not change with model's accuracy
 
 # Next open question a model which tracks internal uncertainity
+# 4 models were conceptual tested for fit
+# Model 1: Classical Bayesian Causal Inference model, referenced as a possible mechanism of binding in Noppeney
+# Model 2: Hierarchical Gaussian Filter, A layered model where each layer tracks how much the earlier layer is varying
+# Model 3: Generalized HGF: Extension of HGF, specifically applied to multisensory cue combination simulation
+# Model 4: HBPTM: Hierarchical version of classical PTM
+
+# Models 1 and 3 were selected since their definition resembles the variable structure of the task
+# Plan is to build both models for a naive observer considering only target
+# Then condition added and then fb_offset added
