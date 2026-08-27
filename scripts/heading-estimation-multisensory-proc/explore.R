@@ -671,3 +671,68 @@ boot.ci(conf_error_slope_boot, type = "perc")
 # Models 1 and 3 were selected since their definition resembles the variable structure of the task
 # Plan is to build both models for a naive observer considering only target
 # Then condition added and then fb_offset added
+
+# Model type 1: BCI model
+library(gamlss)
+
+# 1. Naive BCI observer: Does not take feedback into consideration
+# respond ~ target + sigma, where sigma ~ a + b.target
+naive_bci_formula <- respond ~ offset(target) # Uninformative prior, with respond's mean == target
+naive_bci_sigma_formula <- ~ target # SD ie. noise modelled against target
+naive_bci_nu_formula <- ~ 1 # Right skewed distribution for overall model
+naive_bci_family <- SN1() # Right normal distribution with only one parameter for skewness
+# Fit the model individually for each subject
+naive_bci_fits <- eda_data %>%
+  select(-fb_validity) %>%
+  group_split(subj) %>%
+  set_names(levels(eda_data$subj)) %>%
+  map(~ gamlss(
+                formula = naive_bci_formula,
+                sigma.formula = naive_bci_sigma_formula,
+                nu.formula = naive_bci_nu_formula,
+                family = naive_bci_family,
+                data = .x,
+                control = gamlss.control(n.cyc = 300)
+  ))
+# All subjects converged after increasing the cycles from default to 100 -> 200 -> 300
+
+# Condition aware BCI model: Treats feedback and no feedback information differently
+condition_bci_formula <- respond ~ offset(target) + condition # condition added as a predictor
+condition_bci_sigma_formula <- ~ target + condition # SD ie. noise modelled against target and condition
+condition_bci_nu_formula <- ~ 1
+condition_bci_family <- SN1()
+# Fit the model individually for each subject
+condition_bci_fits <- eda_data %>%
+  select(-fb_validity) %>%
+  group_split(subj) %>%
+  set_names(levels(eda_data$subj)) %>%
+  map(~ gamlss(
+                formula = condition_bci_formula,
+                sigma.formula = condition_bci_sigma_formula,
+                nu.formula = condition_bci_nu_formula,
+                family = condition_bci_family,
+                data = .x,
+                control = gamlss.control(n.cyc = 300)
+  ))
+# All subjects converged at 300 cycles
+
+# Feedback reliability aware BCI model: Weighs whether the feedback is useful or not based on it's |offset|
+feedback_bci_formula <- respond ~ offset(target) + abs(fb_offset) # offset magnitude added as a predictor
+feedback_bci_sigma_formula <- ~ target + abs(fb_offset) # SD ie. noise modelled against target and |offset|
+feedback_bci_nu_formula <- ~ 1
+feedback_bci_family <- SN1()
+# Fit the model individually for each subject
+feedback_bci_fits <- eda_data %>%
+  filter(condition == "FB") %>%
+  group_split(subj) %>%
+  set_names(levels(eda_data$subj)) %>%
+  map(~ gamlss(
+                formula = feedback_bci_formula,
+                sigma.formula = feedback_bci_sigma_formula,
+                nu.formula = feedback_bci_nu_formula,
+                family = feedback_bci_family,
+                data = .x,
+                control = gamlss.control(n.cyc = 300)
+  ))
+# s10's nu (distribution shape) does not converge
+# Need to think of a solution for this
