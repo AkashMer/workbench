@@ -717,13 +717,15 @@ condition_bci_fits <- eda_data %>%
 # All subjects converged at 300 cycles
 
 # Feedback reliability aware BCI model: Weighs whether the feedback is useful or not based on it's |offset|
-feedback_bci_formula <- respond ~ offset(target) + abs(fb_offset) # offset magnitude added as a predictor
-feedback_bci_sigma_formula <- ~ target + abs(fb_offset) # SD ie. noise modelled against target and |offset|
+feedback_bci_formula <- respond ~ offset(target) + condition + condition:abs(fb_offset)
+# offset magnitude added as a predictor
+feedback_bci_sigma_formula <- ~ target + condition + condition:abs(fb_offset)
+# SD ie. noise modelled against target, condition and |offset|
 feedback_bci_nu_formula <- ~ 1
 feedback_bci_family <- SN1()
 # Fit the model individually for each subject
 feedback_bci_fits <- eda_data %>%
-  filter(condition == "FB") %>%
+  select(-fb_validity) %>%
   group_split(subj) %>%
   set_names(levels(eda_data$subj)) %>%
   map(~ gamlss(
@@ -736,3 +738,43 @@ feedback_bci_fits <- eda_data %>%
   ))
 # s10's nu (distribution shape) does not converge
 # Need to think of a solution for this
+# Turns out including all the information, and not filtering
+# for FB trials, allowed s10 fit to converge
+
+# Compute the BIC for each model across all subjects
+bic_naive <- imap_dfr(naive_bci_fits, ~ tibble(subj = .y, bic = AIC(.x, k = log(nobs(.x)))))
+bic_condition <- imap_dfr(condition_bci_fits, ~ tibble(subj = .y, bic = AIC(.x, k = log(nobs(.x)))))
+bic_feedback <- imap_dfr(feedback_bci_fits, ~ tibble(subj = .y, bic = AIC(.x, k = log(nobs(.x)))))
+
+# Join the fits into one large tibble
+bic_by_subj <- bic_naive %>%
+  rename(bic_naive = bic) %>%
+  left_join(bic_condition %>% rename(bic_condition = bic), by = "subj") %>%
+  left_join(bic_feedback %>% rename(bic_feedback = bic), by = "subj") %>%
+  mutate(
+  delta_naive = bic_naive - bic_feedback, # relative to feedback_bci, most complex model
+  delta_condition = bic_condition - bic_feedback # relative to feedback_bci, most complex model
+)
+
+# Compute mean + se by summarizing across subjects
+bic_delta_summary <- bic_by_subj %>%
+  select(subj, delta_naive, delta_condition) %>%
+  pivot_longer(-subj, names_to = "model", values_to = "delta_bic") %>%
+  mutate(model = factor(model,
+                         levels = c("delta_naive", "delta_condition"),
+                         labels = c("naive", "condition"))) %>%
+  group_by(model) %>%
+  summarise(mean_delta = mean(delta_bic),
+            se_delta = sd(delta_bic) / sqrt(n()),
+            .groups = "drop")
+
+# Plot to compare how much each model was able to explain the stimulus information
+bic_delta_summary %>%
+ggplot(aes(x = model, y = mean_delta)) +
+  geom_pointrange(aes(ymin = mean_delta - se_delta, ymax = mean_delta + se_delta)) +
+  geom_hline(yintercept = 0) +
+  labs(x = "model", y = "mean delta BIC vs fb offset magnitude added model (+/- SE)") +
+  theme_bw()
+# Both are positive => feedback_bci is the best model
+# But both condition and feedback model are difficult to connect behavioral uncertainity
+# Both condition and feedback models need to be modified so as to create competing uncentainities
