@@ -14,5 +14,3 @@ dependencies:
   - r-quantreg
   - r-rmarkdown
   - r-tidyverse
-
-prefix: "C:\\Users\\akash\\miniforge3\\envs\\r-bva"

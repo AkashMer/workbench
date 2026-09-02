@@ -14,6 +14,105 @@ My main goal is to apply and confirm the mechanisms described in a multisensory 
 
 ## Experiment Design
 
-33 participants wore VR headsets with controllers held in both hands in a rectangular room. Each participant performed ~400 trials for ~90 minutes. The sessions were divided into two blocks separated by a 2-10 minute break.
+33 participants wore VR headsets with controllers held in both hands in a rectangular room. Each participant performed ~400 trials for ~90 minutes. The sessions were divided into two blocks separated by a 2-10 minute break. The data from 3 participants is not present in the public dataset. These were excluded by the experimenters due to motion sickness or not enough recorded trials.  
 
-### Trial Structure
+### Trial and Block Structure
+
+Each trial followed the following structure:
+
+- **Encoding period**: Participant faces a door on the VR screen. They rotate around the vertical axis towards the controller which vibrates in the right or left hand. The stop of the vibrations signals the participant has arrived to a *target* angular rotation.
+- **Retrieval period**: The VR screen goes blank and the participant is asked to rotate back to re-face the door. The direction choice for turning back was left to the participants. There were two types of retrieval periods:
+    - *noFb* trials: No visual feedback is provided
+    - *FB* trials: ~ 300 msec flash of the virtual environment is provided as feedback while they are turning back to re-face the door
+- **Response period**: Participants press a button on the controller to record their response. No time limits were set.
+- **Subjective rating period**: Paticipants adjust a red triangle's angle to indicate their confidence.
+
+Each of the two blocks were divided into:
+
+- **Practice period**: 10 trials
+- **No Feedback period**: 25 trials
+- **Feedback period**: 150 trials
+- **No Feedback period**: 25 trials
+
+### Ethological significance
+
+The trial structure reminded me of when I would enter a room, grab something and leave through the door all the while focusing on my phone. Humans are able to perform this simple task with great fidelity even in novel environments. The immersive nature of the VR, free-choice for direction during the retrieval period and no time limits add to the ethological relevance of the experiment. The subjective rating period provides a reset time for the participants and may reduce the effects due to learning. Can adding a response action of opening the door in the virtual environment increase the ethological relevance?  
+
+## Data Structure
+
+```{r}
+#| label: imports
+#| code-summary: Imports
+#| code-fold: true
+# Import necessary libraries
+library(here)
+library(tidyverse)
+library(tidymodels)
+```
+
+```{r}
+#| label: download-data
+#| code-summary: Download data
+#| code-fold: true
+# Get the data path
+data_path <- here("data", "heading-estimation-multisensory-proc")
+# Make the directory if it does not exist already
+dir.create(data_path, recursive = TRUE, showWarnings = FALSE)
+# Download dataconf.csv to data_path if not already present
+if (!file.exists(file.path(data_path, "dataconf.csv"))) {
+  dataconf_url <- "https://raw.githubusercontent.com/sharootonian/CombinationAndCompetitionHeadingDirection/main/data/dataconf.csv"
+  download.file(dataconf_url, file.path(data_path, "dataconf.csv"), mode = "wb")
+}
+```
+
+```{r}
+#| label: preprocess-data
+#| code-summary: Load, preprocess and split data into train, validation and test splits
+#| code-fold: true
+
+# Load data
+dataconf <- read_csv(file.path(data_path, "dataconf.csv"))
+
+# Prepare the data for train, validation and test splits
+data <- dataconf %>%
+  # Convert the subject column into a factor
+  mutate(subj = factor(as.integer(str_remove(subj, "^s")))) %>%
+  # Convert the condition column into a factor
+  mutate(condition = factor(condition, levels = c("noFB", "FB"))) %>%
+  # Since feedback validity labels are not present, use label reliable for gaussian (0, 30) +/- 3SD
+  mutate(fb_validity = factor(case_when(condition == "noFB" ~ NA,
+                                        abs(fb_offset) <= 90 ~ "reliable",
+                                        TRUE ~ "unreliable"),
+                              levels = c("reliable", "unreliable"))) %>%
+  # Create a new column to signify the three trial types
+  mutate(trial_type = if_else(condition == "noFB", "noFB", as.character(fb_validity))) %>%
+  mutate(trial_type = factor(trial_type, levels = c("noFB", "reliable", "unreliable")))
+
+# Split into train (80%), validation (10%) and test (10%) stratified by subj
+set.seed(246) # For reproducibility
+data_split <- initial_validation_split(data, prop = c(0.8, 0.1), strata = subj)
+train <- training(data_split)
+validation <- validation(data_split)
+test <- testing(data_split)
+```
+
+`dataconf.csv` contains the following columns:
+
+- *subj*: Participant identifier; `r length(unique(data$subj))` participants in total
+- *trial*: Trial identifier
+- *target* (degrees): Angle value where the controller vibration stops ranging from `0` to `360`; circularly uniform and anchored to the door
+- *respond* (degrees): Total angle the participant turns ie. accumulates before the response
+- *error* (degrees): `respond` - `target`; objective measure of performance
+- *condition*: Marks `FB` vs. `noFB` trials
+- *fb* (degrees): Angular position of the feedback shown; anchored to the door
+- *fb_true* (degrees): True angular position of the feedback; anchored to the door
+- *fb_offset* (degrees): `fb` - `fb_true`; signifies the reliability of the visual feedback. These were generated in two ways:
+    - 70% of the trials: $\sim Gaussian(0, 30)$
+    - 30% of the trials: $\sim Uniform(-180, 180)$
+- *fb_time* (msec): Marks the time from trial start to feedback flash
+- *trial_duration* (msec): Total time taken by the participant to press the response button from trial start
+- *conf* (degrees): Response confidence level; subjective measure of performance
+- *viewAmount* (degrees): View angle traversed by the participant while the visual feedback was visible; signifies how much attention was payed to the feedback. For eg., a lower `viewAmount` would suggest that the participant slowed down to reorient themselves to the new context obtained from the feedback
+
+## Analysis (think of a descriptive title)
+
