@@ -1,9 +1,7 @@
 ---
 title: Undecided
 engine: knitr
-format: gfm
-bibliography: 
-csl: apa.csl
+# format: gfm
 from: markdown+wikilinks_title_after_pipe
 link-citations: true
 link-bibliography: true
@@ -14,7 +12,7 @@ My main goal is to apply and confirm the mechanisms described in a multisensory 
 
 ## Experiment Design
 
-33 participants wore VR headsets with controllers held in both hands in a rectangular room. Each participant performed ~400 trials for ~90 minutes. The sessions were divided into two blocks separated by a 2-10 minute break. The data from 3 participants is not present in the public dataset. These were excluded by the experimenters due to motion sickness or not enough recorded trials.  
+33 participants wore VR headsets with controllers held in both hands in a rectangular room. Each participant performed ~400 trials for ~90 minutes. The sessions were divided into two blocks separated by a 2-10 minute break. The data from 3 participants is not present in the public dataset. These were excluded by the experimenters due to motion sickness.  
 
 ### Trial and Block Structure
 
@@ -48,6 +46,8 @@ The trial structure reminded me of when I would enter a room, grab something and
 library(here)
 library(tidyverse)
 library(tidymodels)
+library(circular)
+library(gridExtra)
 ```
 
 ```{r}
@@ -99,7 +99,7 @@ test <- testing(data_split)
 `dataconf.csv` contains the following columns:
 
 - *subj*: Participant identifier; `r length(unique(data$subj))` participants in total
-- *trial*: Trial identifier
+- *trial*: Trial identifier; some trials were excluded from the data when the participant rotated in the wrong direction during encoding period, pressed the wrong response button or responded before receiving the visual feedback
 - *target* (degrees): Angle value where the controller vibration stops ranging from `0` to `360`; circularly uniform and anchored to the door
 - *respond* (degrees): Total angle the participant turns ie. accumulates before the response
 - *error* (degrees): `respond` - `target`; objective measure of performance
@@ -116,3 +116,86 @@ test <- testing(data_split)
 
 ## Analysis (think of a descriptive title)
 
+### Stimulus Design
+
+```{r}
+#| label: stimulus-design
+#| code-summary: ""
+#| code-fold: true
+
+# Confirm almost similar concentration of target angles is present across each subject
+rho_by_subj <- train %>%
+  summarise(rho = rho.circular(circular(target, units = "degrees")), .by = subj)
+# Find the mean and sd of the concentration of target angles
+rho_mean <- mean(rho_by_subj$rho)
+rho_sd <- sd(rho_by_subj$rho)
+
+# Display distribution of target headings
+p_target <- train %>%
+  # Divide target into 20 degree bins
+  mutate(target_bin = cut(target, breaks = seq(0, 360, by = 20), include.lowest = TRUE)) %>%
+  count(subj, target_bin, .drop = FALSE) %>%
+  # Summarize by subjects to confirm consistency
+  group_by(subj) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup() %>%
+  summarise(mean_prop = mean(prop), sd_prop = sd(prop), .by = target_bin) %>%
+  ggplot(aes(x = target_bin, y = mean_prop)) +
+  geom_col(colour = "steelblue", fill = "steelblue") +
+  geom_errorbar(
+    aes(ymin = mean_prop - sd_prop, ymax = mean_prop + sd_prop),
+    width = 0.2
+  ) +
+  # Change to a circular coordinate
+  coord_polar(start = 0) +
+  labs(
+    x = expression(paste("target heading (", degree, ")")),
+    y = "proportion of trials"
+  ) +
+  theme_bw()
+
+# Confirm the ~70/30 split matches the original design for all participants
+reliabililty_by_subj <- train %>%
+  filter(condition == "FB") %>%
+  summarise(prop_reliable = mean(abs(fb_offset) <= 90), .by = subj)
+# Find the mean and sd of reliable trials across subjects
+reliability_mean <- mean(reliabililty_by_subj$prop_reliable)
+reliability_sd <- sd(reliabililty_by_subj$prop_reliable)
+
+# Display distribution of fb_offset which was drawn from two components
+breaks <- seq(-180, 180, by = 20)
+bin_width <- 20
+centers <- breaks[-length(breaks)] + bin_width / 2
+
+fb_agg <- train %>%
+  filter(condition == "FB") %>%
+  mutate(bin_center = centers[cut(fb_offset, breaks = breaks, include.lowest = TRUE, labels = FALSE)]) %>%
+  count(subj, bin_center, .drop = FALSE) %>%
+  # Summarize by subjects to confirm consistency
+  group_by(subj) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup() %>%
+  summarise(mean_prop = mean(prop), se_prop = sd(prop) / sqrt(n()), .by = bin_center)
+
+# Source distributions
+theo_gaussian <- function(x) 0.7 * dnorm(x, 0, 30) * bin_width
+theo_uniform  <- function(x) 0.3 * dunif(x, -180, 180) * bin_width
+
+# Build the plot
+p_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
+  geom_col(width = bin_width * 0.9, fill = "grey70") +
+  geom_errorbar(aes(ymin = mean_prop - se_prop, ymax = mean_prop + se_prop), width = bin_width * 0.2) +
+  geom_function(aes(color = "~ Gaussian(0, 30)"), fun = theo_gaussian, xlim = c(-180, 180), linewidth = 1) +
+  geom_function(aes(color = "~ Uniform(-180, 180)"), fun = theo_uniform, xlim = c(-180, 180), linewidth = 1) +
+  scale_color_brewer(palette = "Dark2") +
+  labs(x = "Visual feedback offset", y = "proportion of FB trials", color = NULL) +
+  theme_bw() +
+  theme(legend.position = "inside", legend.position.inside = c(0.95, 0.95),
+        legend.justification = c("right", "top"))
+
+# Display both plots in a 1 x 2 grid
+grid.arrange(p_target, p_fb_offset, ncol = 2)
+```
+
+- Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
+- Visual feedback offset distribution resembles a gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that. For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant's viewpoint. This resulted in `r round(reliability_mean, 4)*100`% $\pm$ `r 2*round(reliability_sd, 4)*100`% marked as reliable.
