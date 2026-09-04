@@ -48,6 +48,10 @@ library(tidyverse)
 library(tidymodels)
 library(circular)
 library(gridExtra)
+library(boot)
+
+# Pin the here() root explicitly
+here::i_am("scripts/heading-estimation-multisensory-proc/heading-estimation-multisensory-proc.qmd")
 ```
 
 ```{r}
@@ -130,10 +134,16 @@ rho_by_subj <- train %>%
 rho_mean <- mean(rho_by_subj$rho)
 rho_sd <- sd(rho_by_subj$rho)
 
+# Define the 20 degree target bins for plotting purposes
+target_bins <- cut(
+  train$target, breaks = seq(0, 360, by = 20),
+  include.lowest = TRUE
+)
+
 # Display distribution of target headings
-p_target <- train %>%
+plot_target <- train %>%
   # Divide target into 20 degree bins
-  mutate(target_bin = cut(target, breaks = seq(0, 360, by = 20), include.lowest = TRUE)) %>%
+  mutate(target_bin = target_bins) %>%
   count(subj, target_bin, .drop = FALSE) %>%
   # Summarize by subjects to confirm consistency
   group_by(subj) %>%
@@ -182,7 +192,7 @@ theo_gaussian <- function(x) 0.7 * dnorm(x, 0, 30) * bin_width
 theo_uniform  <- function(x) 0.3 * dunif(x, -180, 180) * bin_width
 
 # Build the plot
-p_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
+plot_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
   geom_col(width = bin_width * 0.9, fill = "grey70") +
   geom_errorbar(aes(ymin = mean_prop - se_prop, ymax = mean_prop + se_prop), width = bin_width * 0.2) +
   geom_function(aes(color = "~ Gaussian(0, 30)"), fun = theo_gaussian, xlim = c(-180, 180), linewidth = 1) +
@@ -194,8 +204,67 @@ p_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
         legend.justification = c("right", "top"))
 
 # Display both plots in a 1 x 2 grid
-grid.arrange(p_target, p_fb_offset, ncol = 2)
+grid.arrange(plot_target, plot_fb_offset, ncol = 2)
 ```
 
 - Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
 - Visual feedback offset distribution resembles a gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that. For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant's viewpoint. This resulted in `r round(reliability_mean, 4)*100`% $\pm$ `r 2*round(reliability_sd, 4)*100`% marked as reliable.
+
+### Response Characteristics
+
+```{r}
+#| label: respond-error-by-target
+#| code-summary: Respond and error trends across target bins
+#| code-fold: true
+
+# Define the number of bootstraps
+R_boot <- 1000
+
+# Compute the mean of respond per target bins
+respond_boot_by_bin <- train %>%
+  mutate(target_bin = target_bins, include.lowest = TRUE)
+  group_by(target_bin) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      mean(samp$respond)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(mean = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for respond vs. target
+plot_A <- ggplot(respond_boot_by_bin, aes(x = target_bin, y = mean)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Target Heading", y = "Mean(respond) with 95% bootstrap CI")
+
+# Compute the mean of respond per target bins
+error_boot_by_bin <- train_binned %>%
+  group_by(target_bins) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      mean(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(mean = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for error vs. target
+plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = mean)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Target Heading", y = "mean(error) with 95% bootstrap CI")
+
+# Display both plots in a 1 x 2 grid
+grid.arrange(plot_A, plot_B, ncol = 2)
+```
+
+- 
