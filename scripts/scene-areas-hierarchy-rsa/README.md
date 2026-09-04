@@ -46,7 +46,13 @@ docker run --rm `
 2. Recreate the environment using `mamba env create -f environment.yml` from this folder.
 3. Follow steps 2-3 above for the FreeSurfer license and raw data.
 4. Preprocessing (fMRIPrep, ROI mask construction) requires Docker regardless — see the `fmriprep-run` and `prepare-roi-masks` `eval: false` cells in the `.qmd` for the commands.
-5. Run `quarto render scene-areas-hierarchy-rsa.qmd`.
+5. Register the `fmri` Jupyter kernel from the recreated environment, then uncomment the `jupyter: fmri` line in the `.qmd`'s YAML header:
+
+```powershell
+mamba activate scene-areas-hierarchy-rsa
+python -m ipykernel install --user --name fmri --display-name "fmri"
+```
+6. Run `quarto render scene-areas-hierarchy-rsa.qmd`.
 
 ### Notes
 

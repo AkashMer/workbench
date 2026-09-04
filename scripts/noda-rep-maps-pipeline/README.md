@@ -21,6 +21,13 @@
     - data/calcium_excitatory
     - data/neuropixels
 4. Paste those folders under `data/noda-rep-maps-pipeline` in this repo.
-5. Run `noda-rep-maps-pipeline.qmd` to recreate the post.
+5. Register the `python3` Jupyter kernel from the recreated environment, then uncomment the `jupyter: python3` line in the `.qmd`'s YAML header:
+
+```powershell
+mamba activate allen_brain
+python -m ipykernel install --user --name python3 --display-name "python3"
+```
+
+6. Run `noda-rep-maps-pipeline.qmd` to recreate the post.
 
 *Note*: `explore.py` - Personal scratchpad for data exploration.

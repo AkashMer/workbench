@@ -1,6 +1,6 @@
 ---
 title: Multiple Regression RSA of Scene-Selective Areas in Human fMRI
-jupyter: fmri
+# jupyter: fmri
 format: gfm
 wrap: preserve
 bibliography: scene-areas-hierarchy-rsa.bib

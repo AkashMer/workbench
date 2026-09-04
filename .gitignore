@@ -7,9 +7,9 @@ data/scene-areas-hierarchy-rsa/*
 .Rproj.user/
 .quarto/
 .jupyter_cache/
+*_cache/
 *.quarto_ipynb*
 *_files/
-!scripts/**/*_files/
 /_site/
 /_freeze/
 
@@ -25,3 +25,6 @@ data/scene-areas-hierarchy-rsa/*
 
 # Personal version of environment
 my_environment.yml
+
+# Per-post local R environment
+.Renviron

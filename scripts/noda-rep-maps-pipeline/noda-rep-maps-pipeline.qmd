@@ -1,6 +1,6 @@
 ---
 title: Estimation of Representational Maps in Mouse Visual Areas (Noda et al., 2024)
-jupyter: python3
+# jupyter: python3
 format: gfm
 ---
 
