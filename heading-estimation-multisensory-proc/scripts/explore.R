@@ -8,7 +8,8 @@ library(quantreg)
 
 # Download the data files from the github repo
 # 1. Get the data path
-data_path <- here("data", "heading-estimation-multisensory-proc")
+here::i_am("scripts/explore.R")
+data_path <- here("data")
 # 2. Make the directory if it does not exist already
 dir.create(data_path, recursive = TRUE, showWarnings = FALSE)
 # 3. Download the data file to data_path if not already present

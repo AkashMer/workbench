@@ -1,6 +1,6 @@
 ---
 title: Multiple Regression RSA of Scene-Selective Areas in Human fMRI
-# jupyter: fmri
+jupyter: fmri
 format: gfm
 wrap: preserve
 bibliography: scene-areas-hierarchy-rsa.bib
@@ -52,8 +52,8 @@ These areas span the low-level to high-level feature hierarchy for scene percept
 
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 aria2c -c -x 16 -s 16 -k 1M --content-disposition \
-  -d ../../data/scene-areas-hierarchy-rsa/raw_fmri \
-  -i ../../data/scene-areas-hierarchy-rsa/scidb_manifest.txt
+  -d ../data/raw_fmri \
+  -i ../data/scidb_manifest.txt
 ```
 
 ```{=html}
@@ -92,10 +92,9 @@ import rsatoolbox
 from sklearn.manifold import MDS
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-# Get the current data-slug for the current folder and the data directory
+# Get the current project folder's data directory
 current_dir = Path.cwd()
-data_slug = current_dir.name
-data_path = current_dir.parents[1] / "data" / data_slug
+data_path = current_dir.parent / "data"
 ```
 
 ## Data Structure
@@ -298,7 +297,7 @@ best_worst_candidates[['Mean FD', 'Max SD(DVARS)', 'HND Accuracy %']]
 %%bash
 
 SUB=26
-DATA=../../data/scene-areas-hierarchy-rsa
+DATA=../data
 # fMRIPrep's per-participant HTML report to check completion
 FMRIPREP_REPORT="$DATA/derivatives/sub-${SUB}.html"
 
@@ -428,7 +427,7 @@ Thus in total 14 ROIs (7 in each hemisphere) are selected to form a hypothetical
 %%bash
 
 SUB=26
-DATA=../../data/scene-areas-hierarchy-rsa
+DATA=../data
 LABEL_DIR="$DATA/derivatives/sub-${SUB}/label"
 mkdir -p "$LABEL_DIR"
 

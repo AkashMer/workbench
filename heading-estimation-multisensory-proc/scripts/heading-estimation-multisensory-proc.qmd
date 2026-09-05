@@ -54,7 +54,7 @@ library(gridExtra)
 library(boot)
 
 # Pin the here() root explicitly
-here::i_am("scripts/heading-estimation-multisensory-proc/heading-estimation-multisensory-proc.qmd")
+here::i_am("scripts/heading-estimation-multisensory-proc.qmd")
 ```
 
 ```{r}
@@ -62,7 +62,7 @@ here::i_am("scripts/heading-estimation-multisensory-proc/heading-estimation-mult
 #| code-summary: Download data
 #| code-fold: true
 # Get the data path
-data_path <- here("data", "heading-estimation-multisensory-proc")
+data_path <- here("data")
 # Make the directory if it does not exist already
 dir.create(data_path, recursive = TRUE, showWarnings = FALSE)
 # Download dataconf.csv to data_path if not already present

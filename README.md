@@ -6,14 +6,22 @@ Storage space for the analysis scripts behind the posts in the Workbench section
 
 | Folder | Description |
 |---|---|
-| **data** | Placeholder for the data used, organized by post. Data itself is not stored here; see below. |
-| **scripts** | Quarto `.qmd` files containing the analysis code, organized by post. Mirrors the `data/` subfolder structure. |
+| [`noda-rep-maps-pipeline`](noda-rep-maps-pipeline/) | [Estimation of Representational Maps in Mouse Visual Areas (Noda et al., 2024)](https://akashmer.github.io/Nole-Nexus/Workbench/noda-rep-maps-pipeline/noda-rep-maps-pipeline) |
+| [`scene-areas-hierarchy-rsa`](scene-areas-hierarchy-rsa/) | [Multiple Regression RSA of Scene-Selective Areas in Human fMRI](https://akashmer.github.io/Nole-Nexus/Workbench/scene-areas-hierarchy-rsa/scene-areas-hierarchy-rsa) |
+| [`heading-estimation-multisensory-proc`](heading-estimation-multisensory-proc/) | |
+
+Each post folder contains:
+
+| Subfolder | Description |
+|---|---|
+| **data** | Placeholder for the data used. Data itself is not stored here; see below. |
+| **scripts** | The Quarto `.qmd` file and analysis code for that post, plus its own environment/setup files. |
 
 ## Licensing
 
 - CODE in this repo is covered under the [MIT License](LICENSE).
-- DATASETS under `data/` are not included; they are linked per post and remain under their upstream licenses.
-- POSTS rendered from these scripts are covered under CC BY 4.0 on the site.
+- DATASETS under each post's `data/` folder are not included; they are linked per post and remain under their upstream licenses.
+- POSTS rendered from these scripts are covered under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) on the site.
 
 ## Data
 
@@ -21,10 +29,4 @@ Data is NOT stored in this repo, as it is not mine to redistribute, and each pos
 
 ## Reproducing a post
 
-Each post is self-contained under its own slug. To reproduce one:
-
-1. Clone this repo locally.
-2. Open that post's README at `scripts/<post-slug>/README.md`. It lists the data source(s), the exact files, and the setup for that post.
-3. Recreate the environment using `mamba env create -f environment.yml` from the post's script folder.
-4. Download the data into `data/<post-slug>/` as the README directs.
-5. Run the `.qmd` file in `scripts/<post-slug>/`.
+Each post is self-contained under its own slug. Follow the instruction in the README file for each post to reproduce.

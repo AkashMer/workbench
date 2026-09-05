@@ -27,13 +27,12 @@ from scipy.spatial.distance import squareform
 # All the fMRI data downloaded using the url manifest from scidb using aria2c
 # Command:
 # aria2c -c -x 16 -s 16 -k 1M --content-disposition \
-# -d /mnt/c/Users/akash/Documents/workbench/data/scene-areas-hierarchy-rsa/raw_fmri \
-# -i /mnt/c/Users/akash/Documents/workbench/data/scene-areas-hierarchy-rsa/scidb_manifest.txt
+# -d /mnt/c/Users/akash/Documents/workbench/scene-areas-hierarchy-rsa/data/raw_fmri \
+# -i /mnt/c/Users/akash/Documents/workbench/scene-areas-hierarchy-rsa/data/scidb_manifest.txt
 
 # Check the structure of the data file
-# 1. Get the data root
-repo_root = Path.cwd()
-data_path = repo_root / "data" / "scene-areas-hierarchy-rsa"
+# 1. Get this project's own data folder
+data_path = Path(__file__).resolve().parent.parent / "data"
 raw_data_path = data_path / "raw_fmri"
 
 # # 2. Initialize the subject 23 zip file
@@ -357,18 +356,18 @@ candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
 # zip_file.close()
 
 # DCM to Nifti conversion done for all bold runs in a wsl2 terminal using the command below
-# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-26/func
+# mkdir -p scene-areas-hierarchy-rsa/data/bids/sub-26/func
 # for run in 1 2 3 4; do
 #   dcm2niix -z y -f "sub-26_task-sm_run-${run}_bold" \
-#     -o data/scene-areas-hierarchy-rsa/bids/sub-26/func \
-#     data/scene-areas-hierarchy-rsa/extracted/subject_26/MRI_Scanning_sub26/bold_run${run}
+#     -o scene-areas-hierarchy-rsa/data/bids/sub-26/func \
+#     scene-areas-hierarchy-rsa/data/extracted/subject_26/MRI_Scanning_sub26/bold_run${run}
 # done
 
 # Do the same for the T1w image
-# mkdir -p data/scene-areas-hierarchy-rsa/bids/sub-26/anat
+# mkdir -p scene-areas-hierarchy-rsa/data/bids/sub-26/anat
 # dcm2niix -z y -f "sub-26_T1w" \
-#   -o data/scene-areas-hierarchy-rsa/bids/sub-26/anat \
-#   data/scene-areas-hierarchy-rsa/extracted/subject_26/MRI_Scanning_sub26/t1
+#   -o scene-areas-hierarchy-rsa/data/bids/sub-26/anat \
+#   scene-areas-hierarchy-rsa/data/extracted/subject_26/MRI_Scanning_sub26/t1
 
 # Run fMRIPrep on the extracted and converted BIDS data for Subject 15 to get the preprocessed data
 # docker run --rm \
@@ -509,11 +508,11 @@ run_residuals = glm_model.residuals
 
 # ROI masking
 # Use the same docker container to get the freesurfer surface masks from visfatlas
-# mkdir -p data/scene-areas-hierarchy-rsa/derivatives/sub-15/label
+# mkdir -p scene-areas-hierarchy-rsa/data/derivatives/sub-15/label
 # for hemi in lh rh; do
 #   for region in v1d v1v v2d v2v; do
 #     docker run --rm \
-#       -v "$(pwd)/data/scene-areas-hierarchy-rsa:/data" \
+#       -v "$(pwd)/scene-areas-hierarchy-rsa/data:/data" \
 #       --entrypoint bash \
 #       nipreps/fmriprep:25.2.0 \
 #       -c "export SUBJECTS_DIR=/data/derivatives/sourcedata/freesurfer && \
@@ -532,7 +531,7 @@ run_residuals = glm_model.residuals
 # for hemi in lh rh; do
 #   for region in PPA OPA MPA; do
 #     docker run --rm \
-#       -v "$(pwd)/data/scene-areas-hierarchy-rsa:/data" \
+#       -v "$(pwd)/scene-areas-hierarchy-rsa/data:/data" \
 #       --entrypoint bash \
 #       nipreps/fmriprep:25.2.0 \
 #       -c "export SUBJECTS_DIR=/data/derivatives/sourcedata/freesurfer && \
@@ -599,7 +598,7 @@ for hemi in ['lh', 'rh']:
 # for hemi in lh rh; do
 #   for region in ppa opa mpa v1d v1v v2d v2v; do
 #     docker run --rm \
-#       -v "$(pwd)/data/scene-areas-hierarchy-rsa:/data" \
+#       -v "$(pwd)/scene-areas-hierarchy-rsa/data:/data" \
 #       --entrypoint bash \
 #       nipreps/fmriprep:25.2.0 \
 #       -c "export SUBJECTS_DIR=/data/derivatives/sourcedata/freesurfer && \

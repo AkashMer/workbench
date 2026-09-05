@@ -1,6 +1,0 @@
-# Quarto project config for all workbench posts
-# post_render.py rewrites relative figure paths to absolute Quartz-compatible paths
-# so figures resolve correctly when the site is built from Nole-Nexus Website/ as root
-project:
-  type: default
-  post-render: utils/post_render.py

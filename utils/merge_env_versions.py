@@ -16,8 +16,8 @@ def main():
     parser.add_argument('--out', required=True)
     args = parser.parse_args()
 
-    # Resolve paths against scripts/<slug>/ when a slug is given
-    base = Path('scripts') / args.slug if args.slug else Path('.')
+    # Resolve paths against <slug>/scripts/ when a slug is given
+    base = Path(args.slug) / 'scripts' if args.slug else Path('.')
     args.environment = base / args.environment
     args.full = base / args.full
     args.out = base / args.out

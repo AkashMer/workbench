@@ -1,6 +1,6 @@
 ---
 title: Estimation of Representational Maps in Mouse Visual Areas (Noda et al., 2024)
-# jupyter: python3
+jupyter: python3
 format: gfm
 ---
 
@@ -157,10 +157,9 @@ Calcium (Inhibitory) data is excluded since it is stored as unbinned raw traces.
 #| code-fold: true
 #| label: cohort-size
 
-# Get the current data-slug for the current folder and the data directory
+# Get the current project folder's data directory
 current_dir = Path.cwd()
-data_slug = current_dir.name
-data_path = current_dir.parents[1] / "data" / data_slug
+data_path = current_dir.parent / "data"
 
 # Compute the cohort size of neuropixels modality
 manifest_path = os.path.join(os.path.expanduser('~'), 'allen_cache_ecephys', 'manifest.json')

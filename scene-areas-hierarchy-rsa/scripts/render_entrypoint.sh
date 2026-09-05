@@ -9,5 +9,5 @@ set -e
 cp -r /workbench/scripts/. /build/scripts/
 ln -s /workbench/data /build/data
 
-cd /build/scripts/scene-areas-hierarchy-rsa
+cd /build/scripts
 quarto render scene-areas-hierarchy-rsa.qmd --output-dir "/Nole-Nexus Website/Workbench"

@@ -1,8 +1,4 @@
-data/*
-!data/.gitkeep
-# un-ignores the folder data/scene-areas-hierarchy-rsa/
-!data/scene-areas-hierarchy-rsa/
-data/scene-areas-hierarchy-rsa/*
+*/data/*
 .ipynb_checkpoints/
 .Rproj.user/
 .quarto/

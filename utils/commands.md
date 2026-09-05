@@ -10,16 +10,15 @@ mamba env export --from-history | Out-File -Encoding utf8 environment.yml
 mamba env export --no-builds | Out-File -Encoding utf8 my_environment.yml
 # Merge a --from-history environment.yml with versions from my_environment.yml (full export)
 # From the workbench root
-mamba run python scripts/utils/merge_env_versions.py --slug post-slug --environment environment.yml --full my_environment.yml --out environment.yml
-# From post-slug
-mamba run python ../utils/merge_env_versions.py --environment environment.yml --full my_environment.yml --out environment.yml
+mamba run python utils/merge_env_versions.py --slug post-slug --environment environment.yml --full my_environment.yml --out environment.yml
+# From post-slug/scripts
+mamba run python ../../utils/merge_env_versions.py --environment environment.yml --full my_environment.yml --out environment.yml
 
-# Docker build (run from inside post-slug)
+# Docker build (run from inside post-slug/scripts)
 docker build -t -post-slug- .
 
 # Final render (posts with a Dockerfile, run from the workbench root)
 docker run --rm `
-  -v "${PWD}\scripts:/workbench/scripts" `
-  -v "${PWD}\data:/workbench/data" `
+  -v "${PWD}\post-slug:/workbench" `
   -v "$env:NOLE_NEXUS\Nole-Nexus Website:/Nole-Nexus Website" `
   -post-slug-

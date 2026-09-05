@@ -20,30 +20,29 @@ Steel, A. (2024). *Place memory parcels and localizer*. https://osf.io/xmhn7/
 
 ### Option A: Docker (recommended, fully reproducible)
 
-A [`Dockerfile`](https://github.com/AkashMer/workbench/blob/main/scripts/scene-areas-hierarchy-rsa/Dockerfile) is provided in this folder which builds the same container used to render this post.
+A [`Dockerfile`](https://github.com/AkashMer/workbench/blob/main/scene-areas-hierarchy-rsa/scripts/Dockerfile) is provided under `scripts/` which builds the same container used to render this post.
 
-1. Clone this repo locally.
-2. Register for a free [FreeSurfer license](https://surfer.nmr.mgh.harvard.edu/registration.html) and place your `license.txt` under `data/scene-areas-hierarchy-rsa/`.
-3. Download the raw fMRI data listed above into `data/scene-areas-hierarchy-rsa/raw_fmri/` using the provided [`scidb_manifest.txt`](https://github.com/AkashMer/workbench/blob/main/data/scene-areas-hierarchy-rsa/scidb_manifest.txt) and the `aria2c` command in the `download-data` code cell of the `.qmd`.
-4. From this folder, build the image:
+1. Clone this repo locally, then `cd` into `scene-areas-hierarchy-rsa/`.
+2. Register for a free [FreeSurfer license](https://surfer.nmr.mgh.harvard.edu/registration.html) and place your `license.txt` under `data/`.
+3. Download the raw fMRI data listed above into `data/raw_fmri/` using the provided [`scidb_manifest.txt`](https://github.com/AkashMer/workbench/blob/main/scene-areas-hierarchy-rsa/data/scidb_manifest.txt) and the `aria2c` command in the `download-data` code cell of the `.qmd`.
+4. From `scripts/`, build the image:
 
 ```powershell
 docker build -t scene-areas-hierarchy-rsa .
 ```
 
-5. From the workbench root, run the render:
+5. `cd` back out to the workbench repo root (the folder containing `scene-areas-hierarchy-rsa/`), then run the render:
 
 ```powershell
 docker run --rm `
-  -v "${PWD}\scripts:/workbench/scripts" `
-  -v "${PWD}\data:/workbench/data" `
+  -v "${PWD}\scene-areas-hierarchy-rsa:/workbench" `
   scene-areas-hierarchy-rsa
 ```
 
 ### Option B: Local environment
 
-1. Clone this repo locally.
-2. Recreate the environment using `mamba env create -f environment.yml` from this folder.
+1. Clone this repo locally, then `cd` into `scene-areas-hierarchy-rsa/`.
+2. Recreate the environment using `mamba env create -f environment.yml` from `scripts/`.
 3. Follow steps 2-3 above for the FreeSurfer license and raw data.
 4. Preprocessing (fMRIPrep, ROI mask construction) requires Docker regardless — see the `fmriprep-run` and `prepare-roi-masks` `eval: false` cells in the `.qmd` for the commands.
 5. Register the `fmri` Jupyter kernel from the recreated environment, then uncomment the `jupyter: fmri` line in the `.qmd`'s YAML header:
@@ -52,7 +51,7 @@ docker run --rm `
 mamba activate scene-areas-hierarchy-rsa
 python -m ipykernel install --user --name fmri --display-name "fmri"
 ```
-6. Run `quarto render scene-areas-hierarchy-rsa.qmd`.
+6. From `scripts/`, run `quarto render scene-areas-hierarchy-rsa.qmd`.
 
 ### Notes
 
