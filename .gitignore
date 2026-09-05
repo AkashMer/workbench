@@ -26,5 +26,7 @@ data/scene-areas-hierarchy-rsa/*
 # Personal version of environment
 my_environment.yml
 
-# Per-post local R environment
-.Renviron
+# # Ignore symlink folders inside renv
+# **/renv/library/
+# **renv/staging/
+# **renv/sandbox/
