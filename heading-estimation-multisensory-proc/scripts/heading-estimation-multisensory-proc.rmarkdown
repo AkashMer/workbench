@@ -52,6 +52,7 @@ library(tidymodels)
 library(circular)
 library(gridExtra)
 library(boot)
+library(quantreg)
 
 # Pin the here() root explicitly
 here::i_am("scripts/heading-estimation-multisensory-proc.qmd")
@@ -96,11 +97,16 @@ data <- dataconf %>%
   mutate(trial_type = if_else(condition == "noFB", "noFB", as.character(fb_validity))) %>%
   mutate(trial_type = factor(trial_type, levels = c("noFB", "reliable", "unreliable")))
 
-# Split into train (80%) and test (20%) stratified by subj
+# Split into train (70%), validation (15%) and test (15%) by whole subjects
 set.seed(246) # For reproducibility
-data_split <- initial_split(data, prop = 0.8, strata = subj)
+data_split <- group_initial_split(data, group = subj, prop = 0.7)
 train <- training(data_split)
-test <- testing(data_split)
+remainder <- testing(data_split)
+
+# Split the remainder evenly into validation and test by whole subjects
+remainder_split <- group_initial_split(remainder, group = subj, prop = 0.5)
+validation <- training(remainder_split)
+test <- testing(remainder_split)
 ```
 
 `dataconf.csv` contains the following columns:
@@ -126,9 +132,12 @@ test <- testing(data_split)
 ### Stimulus Design
 
 ```{r}
-#| label: stimulus-design
+#| label: fig-stimulus-design
+#| fig-cap: "**Distributions of target heading and visual feedback offset across participants**"
 #| code-summary: ""
 #| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
 
 # Confirm almost similar concentration of target angles is present across each subject
 rho_by_subj <- train %>%
@@ -138,10 +147,19 @@ rho_mean <- mean(rho_by_subj$rho)
 rho_sd <- sd(rho_by_subj$rho)
 
 # Define the 20 degree target bins for plotting purposes
+target_bin_breaks <- seq(0, 360, by = 20)
+target_bin_labels <- paste(head(target_bin_breaks, -1), tail(target_bin_breaks, -1), sep = "-")
 target_bins <- cut(
-  train$target, breaks = seq(0, 360, by = 20),
-  include.lowest = TRUE
+  train$target, breaks = target_bin_breaks,
+  include.lowest = TRUE, labels = target_bin_labels
 )
+
+# Show every other bin label, always keeping the first and last bin
+n_bins <- length(target_bin_labels)
+target_bin_ticks <- target_bin_labels[c(TRUE, FALSE)]
+if (!(target_bin_labels[n_bins] %in% target_bin_ticks)) {
+  target_bin_ticks <- c(target_bin_ticks, target_bin_labels[n_bins])
+}
 
 # Display distribution of target headings
 plot_target <- train %>%
@@ -165,7 +183,11 @@ plot_target <- train %>%
     x = expression(paste("target heading (", degree, ")")),
     y = "proportion of trials"
   ) +
-  theme_bw()
+  theme_bw() +
+  theme(
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 9)
+  )
 
 # Confirm the ~70/30 split matches the original design for all participants
 reliabililty_by_subj <- train %>%
@@ -202,9 +224,15 @@ plot_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
   geom_function(aes(color = "~ Uniform(-180, 180)"), fun = theo_uniform, xlim = c(-180, 180), linewidth = 1) +
   scale_color_brewer(palette = "Dark2") +
   labs(x = "Visual feedback offset", y = "proportion of FB trials", color = NULL) +
-  theme_bw() +
-  theme(legend.position = "inside", legend.position.inside = c(0.95, 0.95),
-        legend.justification = c("right", "top"))
+  theme_classic() +
+  theme(
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10),
+    legend.position = "inside", legend.position.inside = c(1, 1),
+    legend.justification = c(1, 1),
+    legend.text = element_text(size = 10),
+    legend.key.size = unit(1.2, "lines")
+  )
 
 # Display both plots in a 1 x 2 grid
 grid.arrange(plot_target, plot_fb_offset, ncol = 2)
@@ -216,9 +244,12 @@ grid.arrange(plot_target, plot_fb_offset, ncol = 2)
 ### Response Characteristics
 
 ```{r}
-#| label: respond-error-by-target
-#| code-summary: Respond and error trends across target bins
+#| label: fig-respond-error-by-target
+#| fig-cap: "**Response and error trends across target heading bins**"
+#| code-summary: ""
 #| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
 
 # Define the number of bootstraps
 R_boot <- 1000
@@ -241,8 +272,8 @@ respond_boot_by_bin <- train %>%
 # Define the plot for respond vs. target
 plot_A <- ggplot(respond_boot_by_bin, aes(x = target_bin, y = mean)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_classic() +
   labs(x = "Target Heading", y = "Mean(respond) with 95% bootstrap CI")
 
 # Compute the mean of error per target bins
@@ -263,12 +294,46 @@ error_boot_by_bin <- train %>%
 # Define the plot for error vs. target
 plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = mean)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_classic() +
   labs(x = "Target Heading", y = "mean(error) with 95% bootstrap CI")
 
 # Display both plots in a 1 x 2 grid
 grid.arrange(plot_A, plot_B, ncol = 2)
+
+# 1. Is error truly positively biased?
+error_wilcox <- wilcox.test(train$error, mu = 0)
+subjs <- unique(train$subj)
+median_error_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  median(samp$error)
+}, R = R_boot)
+median_error_ci <- boot.ci(median_error_boot, type = "perc")$percent[4:5]
+
+# 2. Does error stay constant (flat trend) across target?
+# Controlling for individual subjects
+error_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  coef(rq(error ~ target, tau = 0.5, data = samp))["target"]
+}, R = R_boot)
+error_slope_ci <- boot.ci(error_slope_boot, type = "perc")$percent[4:5]
+
+# 3. Does the variance of error grow across target bins?
+# Controlling for individual subjects
+error_sd_boot_by_bin <- train %>%
+  mutate(target_bin = target_bins) %>%
+  group_by(target_bin) %>%
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
 ```
 
-- Checking render
+- Respond angle increases monotonically with target, consistent with `respond` = `target` + `error`. The width of the bootstrapped (`1000`) 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainity with increasing difficulty of the task.
+- Mean error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`], includes zero). Again, the width of the bootstrapped (`1000`) 95% CI for mean error increases with target angle just like respond. This implies
