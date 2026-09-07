@@ -1,0 +1,4 @@
+project:
+  type: default
+  execute-dir: project
+  post-render: ../utils/post_render.py

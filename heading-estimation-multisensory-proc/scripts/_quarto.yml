@@ -1,3 +1,0 @@
-project:
-  type: default
-  post-render: ../../utils/post_render.py
