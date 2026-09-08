@@ -53,6 +53,7 @@ library(circular)
 library(gridExtra)
 library(boot)
 library(quantreg)
+library(rmcorr)
 
 # Pin the here() root explicitly
 here::i_am("scripts/heading-estimation-multisensory-proc.qmd")
@@ -114,7 +115,7 @@ test <- testing(remainder_split)
 - *subj*: Participant identifier; `r length(unique(data$subj))` participants in total
 - *trial*: Trial identifier; some trials were excluded from the data when the participant rotated in the wrong direction during encoding period, pressed the wrong response button or responded before receiving the visual feedback
 - *target* (degrees): Angle value where the controller vibration stops ranging from `0` to `360`; circularly uniform and anchored to the door
-- *respond* (degrees): Total angle the participant turns ie. accumulates before the response
+- *respond* (degrees): Total angle the participant turns during the retrieval period ie. accumulates before the response
 - *error* (degrees): `respond` - `target`; objective measure of performance
 - *condition*: Marks `FB` vs. `noFB` trials
 - *fb* (degrees): Angular position of the feedback shown; anchored to the door
@@ -163,8 +164,8 @@ if (!(target_bin_labels[n_bins] %in% target_bin_ticks)) {
 
 # Display distribution of target headings
 plot_target <- train %>%
-  # Divide target into 20 degree bins
-  mutate(target_bin = target_bins) %>%
+  # Divide target into 20 degree bins, dropping subj levels absent from train
+  mutate(target_bin = target_bins, subj = factor(subj)) %>%
   count(subj, target_bin, .drop = FALSE) %>%
   # Summarize by subjects to confirm consistency
   group_by(subj) %>%
@@ -204,7 +205,10 @@ centers <- breaks[-length(breaks)] + bin_width / 2
 
 fb_agg <- train %>%
   filter(condition == "FB") %>%
-  mutate(bin_center = centers[cut(fb_offset, breaks = breaks, include.lowest = TRUE, labels = FALSE)]) %>%
+  mutate(
+    bin_center = centers[cut(fb_offset, breaks = breaks, include.lowest = TRUE, labels = FALSE)],
+    subj = factor(subj)
+  ) %>%
   count(subj, bin_center, .drop = FALSE) %>%
   # Summarize by subjects to confirm consistency
   group_by(subj) %>%
@@ -245,7 +249,7 @@ grid.arrange(plot_target, plot_fb_offset, ncol = 2)
 
 ```{r}
 #| label: fig-respond-error-by-target
-#| fig-cap: "**Response and error trends across target heading bins**"
+#| fig-cap: "**Mean respond and median error across target heading bins**"
 #| code-summary: ""
 #| code-fold: true
 #| fig-width: 10
@@ -301,7 +305,7 @@ plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = median)) +
 # Display both plots in a 1 x 2 grid
 grid.arrange(plot_A, plot_B, ncol = 2)
 
-# 1. Is error truly positively biased?
+# Is error truly positively biased?
 error_wilcox <- wilcox.test(train$error, mu = 0)
 subjs <- unique(train$subj)
 median_error_boot <- boot(subjs, function(d, i) {
@@ -310,7 +314,7 @@ median_error_boot <- boot(subjs, function(d, i) {
 }, R = R_boot)
 median_error_ci <- boot.ci(median_error_boot, type = "perc")$percent[4:5]
 
-# 2. Does error stay constant (flat trend) across target?
+# Does error stay constant (flat trend) across target?
 # Controlling for individual subjects
 error_slope_boot <- boot(subjs, function(d, i) {
   samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
@@ -318,7 +322,12 @@ error_slope_boot <- boot(subjs, function(d, i) {
 }, R = R_boot)
 error_slope_ci <- boot.ci(error_slope_boot, type = "perc")$percent[4:5]
 
-# 3. Does the variance of error grow across target bins?
+# Is respond's variance coming directly from error rather than target?
+# ie. check if the last term in Var(respond) = var(target) + var(error) + 2 cov(target, error) -> 0
+# Repeated measures correlation controls for subject to avoid pooling across subjects
+respond_error_rmcorr <- rmcorr(subj, target, error, dataset = train)
+
+# Does the variance of error grow across target bins?
 # Controlling for individual subjects
 error_sd_boot_by_bin <- train %>%
   mutate(target_bin = target_bins) %>%
@@ -336,5 +345,99 @@ error_sd_boot_by_bin <- train %>%
 ```
 
 - Respond angle increases monotonically with target, consistent with `respond` = `target` + `error` relationship. The width of the bootstrapped (`1000`) 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainity with increasing difficulty of the task.
-- Median error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`], includes zero). However, the width of the bootstrapped (`1000`) 95% CI for mean error increases with target angle just like respond.
+- Median error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`]). However, the width of the bootstrapped (`1000`) 95% CI for mean error increases with target angle just like respond.
+- The growing uncertainty in `respond` tracks `error` directly, since:
+
+$$
+\begin{aligned}
+&respond = target + error \\
+\implies &Var(respond) = Var(target) + Var(error) + 2\;Cov(target, error)
+\end{aligned}
+$$
+
+  The repeated measures correlation between `target` and `error` is negligible ($r$ = `r round(respond_error_rmcorr$r, 3)`, 95% CI [`r round(respond_error_rmcorr$CI[1], 3)`, `r round(respond_error_rmcorr$CI[2], 3)`]). Thus, `error` can be used as the predicting variable instead of `respond` to model participant's uncertainity.
+
+```{r}
+#| label: fig-error-by-condition-offset
+#| fig-cap: "**Median error by condition and by visual feedback offset magnitude**"
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
+
+# Compute the median error per condition
+condition_median_boot <- train %>%
+  group_by(condition) %>%
+  group_modify(~ {
+    group_data <- .x
+    group_subjs <- unique(group_data$subj)
+    b <- boot(group_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ group_data %>% filter(subj == .x))
+      median(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for error vs. condition
+plot_C <- ggplot(condition_median_boot, aes(x = condition, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(labels = c(noFB = "No Feedback", FB = "Feedback")) +
+  theme_classic() +
+  labs(x = "Condition", y = "Median(error) with 95% bootstrap CI")
+
+# Define the 20 degree |fb_offset| bins for plotting purposes, FB trials only
+fb_data <- train %>%
+  filter(condition == "FB") %>%
+  mutate(abs_offset = abs(fb_offset))
+offset_bin_breaks <- seq(0, 180, by = 20)
+offset_bin_labels <- paste(head(offset_bin_breaks, -1), tail(offset_bin_breaks, -1), sep = "-")
+offset_bins <- cut(
+  fb_data$abs_offset, breaks = offset_bin_breaks,
+  include.lowest = TRUE, labels = offset_bin_labels
+)
+
+# Compute the median error per |fb_offset| bin
+offset_median_boot_by_bin <- fb_data %>%
+  mutate(offset_bin = offset_bins) %>%
+  group_by(offset_bin) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      median(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for error vs. |fb_offset|
+plot_D <- ggplot(offset_median_boot_by_bin, aes(x = offset_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Visual feedback offset magnitude", y = "Median(error) with 95% bootstrap CI")
+
+# Display both plots in a 1 x 2 grid
+grid.arrange(plot_C, plot_D, ncol = 2)
+
+# Does error's median differ between noFB and FB conditions?
+# Controlled for subjects
+condition_median_diff_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  median(samp$error[samp$condition == "FB"]) - median(samp$error[samp$condition == "noFB"])
+}, R = R_boot)
+condition_median_diff_ci <- boot.ci(condition_median_diff_boot, type = "perc")$percent[4:5]
+
+# Does error's median grow with the magnitude of fb_offset?
+# Controlled for subjects
+offset_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ fb_data %>% filter(subj == .x))
+  coef(rq(error ~ abs_offset, tau = 0.5, data = samp))["abs_offset"]
+}, R = R_boot)
+offset_slope_ci <- boot.ci(offset_slope_boot, type = "perc")$percent[4:5]
+```
+
+- Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [`r round(condition_median_diff_ci[1], 2)`, `r round(condition_median_diff_ci[2], 2)`]), consistent with varying reliability of the visual feedback. The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense [@Noppeney_2021].
+- But the median error does not increase monotonically with offset magnitude (bootstrapped 95% CI for median regression slope [`r round(offset_slope_ci[1], 3)`, `r round(offset_slope_ci[2], 3)`]). The reliability of the cue itself is taken into consideration beyond a certain limit (around 60$^\circ$ in this case). The extent of integration between proprioception and vision depends more on the size of the conflict between the information from both sources and less on the uncertainity of the information itself [@Noppeney_2021].
 
