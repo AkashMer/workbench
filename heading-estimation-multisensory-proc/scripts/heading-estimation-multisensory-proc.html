@@ -251,7 +251,6 @@ window.Quarto = {
 <h2 class="anchored" data-anchor-id="analysis-think-of-a-descriptive-title">Analysis (think of a descriptive title)</h2>
 <section id="stimulus-design" class="level3">
 <h3 class="anchored" data-anchor-id="stimulus-design">Stimulus Design</h3>
-<div class="cell">
 <details class="code-fold">
 <summary></summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Confirm almost similar concentration of target angles is present across each subject</span></span>
@@ -269,113 +268,130 @@ window.Quarto = {
 <span id="cb4-13"><a href="#cb4-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">include.lowest =</span> <span class="cn">TRUE</span>, <span class="at">labels =</span> target_bin_labels</span>
 <span id="cb4-14"><a href="#cb4-14" aria-hidden="true" tabindex="-1"></a>)</span>
 <span id="cb4-15"><a href="#cb4-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Show every other bin label, always keeping the first and last bin</span></span>
-<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>n_bins <span class="ot">&lt;-</span> <span class="fu">length</span>(target_bin_labels)</span>
-<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a>target_bin_ticks <span class="ot">&lt;-</span> target_bin_labels[<span class="fu">c</span>(<span class="cn">TRUE</span>, <span class="cn">FALSE</span>)]</span>
-<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span>(target_bin_labels[n_bins] <span class="sc">%in%</span> target_bin_ticks)) {</span>
-<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>  target_bin_ticks <span class="ot">&lt;-</span> <span class="fu">c</span>(target_bin_ticks, target_bin_labels[n_bins])</span>
-<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Display distribution of target headings</span></span>
-<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>plot_target <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
-<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Divide target into 20 degree bins, dropping subj levels absent from train</span></span>
-<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins, <span class="at">subj =</span> <span class="fu">factor</span>(subj)) <span class="sc">%&gt;%</span></span>
-<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(subj, target_bin, <span class="at">.drop =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Summarize by subjects to confirm consistency</span></span>
-<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
-<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">prop =</span> n <span class="sc">/</span> <span class="fu">sum</span>(n)) <span class="sc">%&gt;%</span></span>
-<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">mean_prop =</span> <span class="fu">mean</span>(prop), <span class="at">sd_prop =</span> <span class="fu">sd</span>(prop), <span class="at">.by =</span> target_bin) <span class="sc">%&gt;%</span></span>
-<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> mean_prop)) <span class="sc">+</span></span>
-<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">colour =</span> <span class="st">"steelblue"</span>, <span class="at">fill =</span> <span class="st">"steelblue"</span>) <span class="sc">+</span></span>
-<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_errorbar</span>(</span>
-<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">ymin =</span> mean_prop <span class="sc">-</span> sd_prop, <span class="at">ymax =</span> mean_prop <span class="sc">+</span> sd_prop),</span>
-<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>    <span class="at">width =</span> <span class="fl">0.2</span></span>
-<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Change to a circular coordinate</span></span>
-<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_polar</span>(<span class="at">start =</span> <span class="dv">0</span>) <span class="sc">+</span></span>
-<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
-<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"target heading ("</span>, degree, <span class="st">")"</span>)),</span>
-<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"proportion of trials"</span></span>
-<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
-<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">12</span>),</span>
-<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">9</span>)</span>
-<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a><span class="co"># Confirm the ~70/30 split matches the original design for all participants</span></span>
-<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>reliabililty_by_subj <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
-<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(condition <span class="sc">==</span> <span class="st">"FB"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">prop_reliable =</span> <span class="fu">mean</span>(<span class="fu">abs</span>(fb_offset) <span class="sc">&lt;=</span> <span class="dv">90</span>), <span class="at">.by =</span> subj)</span>
-<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a><span class="co"># Find the mean and sd of reliable trials across subjects</span></span>
-<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>reliability_mean <span class="ot">&lt;-</span> <span class="fu">mean</span>(reliabililty_by_subj<span class="sc">$</span>prop_reliable)</span>
-<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>reliability_sd <span class="ot">&lt;-</span> <span class="fu">sd</span>(reliabililty_by_subj<span class="sc">$</span>prop_reliable)</span>
-<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a><span class="co"># Display distribution of fb_offset which was drawn from two components</span></span>
-<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>breaks <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>, <span class="at">by =</span> <span class="dv">20</span>)</span>
-<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>bin_width <span class="ot">&lt;-</span> <span class="dv">20</span></span>
-<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>centers <span class="ot">&lt;-</span> breaks[<span class="sc">-</span><span class="fu">length</span>(breaks)] <span class="sc">+</span> bin_width <span class="sc">/</span> <span class="dv">2</span></span>
-<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>fb_agg <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
-<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(condition <span class="sc">==</span> <span class="st">"FB"</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a>    <span class="at">bin_center =</span> centers[<span class="fu">cut</span>(fb_offset, <span class="at">breaks =</span> breaks, <span class="at">include.lowest =</span> <span class="cn">TRUE</span>, <span class="at">labels =</span> <span class="cn">FALSE</span>)],</span>
-<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a>    <span class="at">subj =</span> <span class="fu">factor</span>(subj)</span>
-<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(subj, bin_center, <span class="at">.drop =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
-<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Summarize by subjects to confirm consistency</span></span>
-<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
-<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">prop =</span> n <span class="sc">/</span> <span class="fu">sum</span>(n)) <span class="sc">%&gt;%</span></span>
-<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
-<span id="cb4-75"><a href="#cb4-75" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">mean_prop =</span> <span class="fu">mean</span>(prop), <span class="at">se_prop =</span> <span class="fu">sd</span>(prop) <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="fu">n</span>()), <span class="at">.by =</span> bin_center)</span>
+<span id="cb4-16"><a href="#cb4-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Show every 3rd bin label for even, uncluttered spacing</span></span>
+<span id="cb4-17"><a href="#cb4-17" aria-hidden="true" tabindex="-1"></a>target_bin_ticks <span class="ot">&lt;-</span> target_bin_labels[<span class="fu">seq</span>(<span class="dv">1</span>, <span class="fu">length</span>(target_bin_labels), <span class="at">by =</span> <span class="dv">3</span>)]</span>
+<span id="cb4-18"><a href="#cb4-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-19"><a href="#cb4-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Display distribution of target headings</span></span>
+<span id="cb4-20"><a href="#cb4-20" aria-hidden="true" tabindex="-1"></a>plot_target <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb4-21"><a href="#cb4-21" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Divide target into 20 degree bins, dropping subj levels absent from train</span></span>
+<span id="cb4-22"><a href="#cb4-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins, <span class="at">subj =</span> <span class="fu">factor</span>(subj)) <span class="sc">%&gt;%</span></span>
+<span id="cb4-23"><a href="#cb4-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(subj, target_bin, <span class="at">.drop =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb4-24"><a href="#cb4-24" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Summarize by subjects to confirm consistency</span></span>
+<span id="cb4-25"><a href="#cb4-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
+<span id="cb4-26"><a href="#cb4-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">prop =</span> n <span class="sc">/</span> <span class="fu">sum</span>(n)) <span class="sc">%&gt;%</span></span>
+<span id="cb4-27"><a href="#cb4-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb4-28"><a href="#cb4-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">mean_prop =</span> <span class="fu">mean</span>(prop), <span class="at">sd_prop =</span> <span class="fu">sd</span>(prop), <span class="at">.by =</span> target_bin) <span class="sc">%&gt;%</span></span>
+<span id="cb4-29"><a href="#cb4-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> mean_prop)) <span class="sc">+</span></span>
+<span id="cb4-30"><a href="#cb4-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">colour =</span> <span class="st">"steelblue"</span>, <span class="at">fill =</span> <span class="st">"steelblue"</span>) <span class="sc">+</span></span>
+<span id="cb4-31"><a href="#cb4-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_errorbar</span>(</span>
+<span id="cb4-32"><a href="#cb4-32" aria-hidden="true" tabindex="-1"></a>    <span class="fu">aes</span>(<span class="at">ymin =</span> mean_prop <span class="sc">-</span> sd_prop, <span class="at">ymax =</span> mean_prop <span class="sc">+</span> sd_prop),</span>
+<span id="cb4-33"><a href="#cb4-33" aria-hidden="true" tabindex="-1"></a>    <span class="at">width =</span> <span class="fl">0.2</span></span>
+<span id="cb4-34"><a href="#cb4-34" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb4-35"><a href="#cb4-35" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Change to a circular coordinate</span></span>
+<span id="cb4-36"><a href="#cb4-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coord_polar</span>(<span class="at">start =</span> <span class="dv">0</span>) <span class="sc">+</span></span>
+<span id="cb4-37"><a href="#cb4-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb4-38"><a href="#cb4-38" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"target heading ("</span>, degree, <span class="st">")"</span>)),</span>
+<span id="cb4-39"><a href="#cb4-39" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">"proportion of trials"</span></span>
+<span id="cb4-40"><a href="#cb4-40" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb4-41"><a href="#cb4-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_bw</span>() <span class="sc">+</span></span>
+<span id="cb4-42"><a href="#cb4-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb4-43"><a href="#cb4-43" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">12</span>),</span>
+<span id="cb4-44"><a href="#cb4-44" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">9</span>)</span>
+<span id="cb4-45"><a href="#cb4-45" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-46"><a href="#cb4-46" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-47"><a href="#cb4-47" aria-hidden="true" tabindex="-1"></a><span class="co"># Confirm the ~70/30 split matches the original design for all participants</span></span>
+<span id="cb4-48"><a href="#cb4-48" aria-hidden="true" tabindex="-1"></a>reliabililty_by_subj <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb4-49"><a href="#cb4-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(condition <span class="sc">==</span> <span class="st">"FB"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb4-50"><a href="#cb4-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">prop_reliable =</span> <span class="fu">mean</span>(<span class="fu">abs</span>(fb_offset) <span class="sc">&lt;=</span> <span class="dv">90</span>), <span class="at">.by =</span> subj)</span>
+<span id="cb4-51"><a href="#cb4-51" aria-hidden="true" tabindex="-1"></a><span class="co"># Find the mean and sd of reliable trials across subjects</span></span>
+<span id="cb4-52"><a href="#cb4-52" aria-hidden="true" tabindex="-1"></a>reliability_mean <span class="ot">&lt;-</span> <span class="fu">mean</span>(reliabililty_by_subj<span class="sc">$</span>prop_reliable)</span>
+<span id="cb4-53"><a href="#cb4-53" aria-hidden="true" tabindex="-1"></a>reliability_sd <span class="ot">&lt;-</span> <span class="fu">sd</span>(reliabililty_by_subj<span class="sc">$</span>prop_reliable)</span>
+<span id="cb4-54"><a href="#cb4-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-55"><a href="#cb4-55" aria-hidden="true" tabindex="-1"></a><span class="co"># Display distribution of fb_offset which was drawn from two components</span></span>
+<span id="cb4-56"><a href="#cb4-56" aria-hidden="true" tabindex="-1"></a>breaks <span class="ot">&lt;-</span> <span class="fu">seq</span>(<span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>, <span class="at">by =</span> <span class="dv">20</span>)</span>
+<span id="cb4-57"><a href="#cb4-57" aria-hidden="true" tabindex="-1"></a>bin_width <span class="ot">&lt;-</span> <span class="dv">20</span></span>
+<span id="cb4-58"><a href="#cb4-58" aria-hidden="true" tabindex="-1"></a>centers <span class="ot">&lt;-</span> breaks[<span class="sc">-</span><span class="fu">length</span>(breaks)] <span class="sc">+</span> bin_width <span class="sc">/</span> <span class="dv">2</span></span>
+<span id="cb4-59"><a href="#cb4-59" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-60"><a href="#cb4-60" aria-hidden="true" tabindex="-1"></a>fb_agg <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb4-61"><a href="#cb4-61" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(condition <span class="sc">==</span> <span class="st">"FB"</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb4-62"><a href="#cb4-62" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb4-63"><a href="#cb4-63" aria-hidden="true" tabindex="-1"></a>    <span class="at">bin_center =</span> centers[<span class="fu">cut</span>(fb_offset, <span class="at">breaks =</span> breaks, <span class="at">include.lowest =</span> <span class="cn">TRUE</span>, <span class="at">labels =</span> <span class="cn">FALSE</span>)],</span>
+<span id="cb4-64"><a href="#cb4-64" aria-hidden="true" tabindex="-1"></a>    <span class="at">subj =</span> <span class="fu">factor</span>(subj)</span>
+<span id="cb4-65"><a href="#cb4-65" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb4-66"><a href="#cb4-66" aria-hidden="true" tabindex="-1"></a>  <span class="fu">count</span>(subj, bin_center, <span class="at">.drop =</span> <span class="cn">FALSE</span>) <span class="sc">%&gt;%</span></span>
+<span id="cb4-67"><a href="#cb4-67" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Summarize by subjects to confirm consistency</span></span>
+<span id="cb4-68"><a href="#cb4-68" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
+<span id="cb4-69"><a href="#cb4-69" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">prop =</span> n <span class="sc">/</span> <span class="fu">sum</span>(n)) <span class="sc">%&gt;%</span></span>
+<span id="cb4-70"><a href="#cb4-70" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ungroup</span>() <span class="sc">%&gt;%</span></span>
+<span id="cb4-71"><a href="#cb4-71" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">mean_prop =</span> <span class="fu">mean</span>(prop), <span class="at">se_prop =</span> <span class="fu">sd</span>(prop) <span class="sc">/</span> <span class="fu">sqrt</span>(<span class="fu">n</span>()), <span class="at">.by =</span> bin_center)</span>
+<span id="cb4-72"><a href="#cb4-72" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-73"><a href="#cb4-73" aria-hidden="true" tabindex="-1"></a><span class="co"># Source distributions</span></span>
+<span id="cb4-74"><a href="#cb4-74" aria-hidden="true" tabindex="-1"></a>theo_gaussian <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fl">0.7</span> <span class="sc">*</span> <span class="fu">dnorm</span>(x, <span class="dv">0</span>, <span class="dv">30</span>) <span class="sc">*</span> bin_width</span>
+<span id="cb4-75"><a href="#cb4-75" aria-hidden="true" tabindex="-1"></a>theo_uniform  <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fl">0.3</span> <span class="sc">*</span> <span class="fu">dunif</span>(x, <span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>) <span class="sc">*</span> bin_width</span>
 <span id="cb4-76"><a href="#cb4-76" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-77"><a href="#cb4-77" aria-hidden="true" tabindex="-1"></a><span class="co"># Source distributions</span></span>
-<span id="cb4-78"><a href="#cb4-78" aria-hidden="true" tabindex="-1"></a>theo_gaussian <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fl">0.7</span> <span class="sc">*</span> <span class="fu">dnorm</span>(x, <span class="dv">0</span>, <span class="dv">30</span>) <span class="sc">*</span> bin_width</span>
-<span id="cb4-79"><a href="#cb4-79" aria-hidden="true" tabindex="-1"></a>theo_uniform  <span class="ot">&lt;-</span> <span class="cf">function</span>(x) <span class="fl">0.3</span> <span class="sc">*</span> <span class="fu">dunif</span>(x, <span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>) <span class="sc">*</span> bin_width</span>
-<span id="cb4-80"><a href="#cb4-80" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-81"><a href="#cb4-81" aria-hidden="true" tabindex="-1"></a><span class="co"># Build the plot</span></span>
-<span id="cb4-82"><a href="#cb4-82" aria-hidden="true" tabindex="-1"></a>plot_fb_offset <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(fb_agg, <span class="fu">aes</span>(<span class="at">x =</span> bin_center, <span class="at">y =</span> mean_prop)) <span class="sc">+</span></span>
-<span id="cb4-83"><a href="#cb4-83" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">width =</span> bin_width <span class="sc">*</span> <span class="fl">0.9</span>, <span class="at">fill =</span> <span class="st">"grey70"</span>) <span class="sc">+</span></span>
-<span id="cb4-84"><a href="#cb4-84" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_errorbar</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> mean_prop <span class="sc">-</span> se_prop, <span class="at">ymax =</span> mean_prop <span class="sc">+</span> se_prop), <span class="at">width =</span> bin_width <span class="sc">*</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
-<span id="cb4-85"><a href="#cb4-85" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_function</span>(<span class="fu">aes</span>(<span class="at">color =</span> <span class="st">"~ Gaussian(0, 30)"</span>), <span class="at">fun =</span> theo_gaussian, <span class="at">xlim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>), <span class="at">linewidth =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
-<span id="cb4-86"><a href="#cb4-86" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_function</span>(<span class="fu">aes</span>(<span class="at">color =</span> <span class="st">"~ Uniform(-180, 180)"</span>), <span class="at">fun =</span> theo_uniform, <span class="at">xlim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>), <span class="at">linewidth =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
-<span id="cb4-87"><a href="#cb4-87" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_brewer</span>(<span class="at">palette =</span> <span class="st">"Dark2"</span>) <span class="sc">+</span></span>
-<span id="cb4-88"><a href="#cb4-88" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Visual feedback offset"</span>, <span class="at">y =</span> <span class="st">"proportion of FB trials"</span>, <span class="at">color =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
-<span id="cb4-89"><a href="#cb4-89" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
-<span id="cb4-90"><a href="#cb4-90" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
-<span id="cb4-91"><a href="#cb4-91" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">12</span>),</span>
-<span id="cb4-92"><a href="#cb4-92" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">10</span>),</span>
-<span id="cb4-93"><a href="#cb4-93" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"inside"</span>, <span class="at">legend.position.inside =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
-<span id="cb4-94"><a href="#cb4-94" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.justification =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
-<span id="cb4-95"><a href="#cb4-95" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">10</span>),</span>
-<span id="cb4-96"><a href="#cb4-96" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.key.size =</span> <span class="fu">unit</span>(<span class="fl">1.2</span>, <span class="st">"lines"</span>)</span>
-<span id="cb4-97"><a href="#cb4-97" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb4-98"><a href="#cb4-98" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-99"><a href="#cb4-99" aria-hidden="true" tabindex="-1"></a><span class="co"># Display both plots in a 1 x 2 grid</span></span>
-<span id="cb4-100"><a href="#cb4-100" aria-hidden="true" tabindex="-1"></a><span class="fu">grid.arrange</span>(plot_target, plot_fb_offset, <span class="at">ncol =</span> <span class="dv">2</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb4-77"><a href="#cb4-77" aria-hidden="true" tabindex="-1"></a><span class="co"># Build the plot</span></span>
+<span id="cb4-78"><a href="#cb4-78" aria-hidden="true" tabindex="-1"></a>plot_fb_offset <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(fb_agg, <span class="fu">aes</span>(<span class="at">x =</span> bin_center, <span class="at">y =</span> mean_prop)) <span class="sc">+</span></span>
+<span id="cb4-79"><a href="#cb4-79" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_col</span>(<span class="at">width =</span> bin_width <span class="sc">*</span> <span class="fl">0.9</span>, <span class="at">fill =</span> <span class="st">"grey70"</span>) <span class="sc">+</span></span>
+<span id="cb4-80"><a href="#cb4-80" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_errorbar</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> mean_prop <span class="sc">-</span> se_prop, <span class="at">ymax =</span> mean_prop <span class="sc">+</span> se_prop), <span class="at">width =</span> bin_width <span class="sc">*</span> <span class="fl">0.2</span>) <span class="sc">+</span></span>
+<span id="cb4-81"><a href="#cb4-81" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_function</span>(<span class="fu">aes</span>(<span class="at">color =</span> <span class="st">"~ Gaussian(0, 30)"</span>), <span class="at">fun =</span> theo_gaussian, <span class="at">xlim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>), <span class="at">linewidth =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb4-82"><a href="#cb4-82" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_function</span>(<span class="fu">aes</span>(<span class="at">color =</span> <span class="st">"~ Uniform(-180, 180)"</span>), <span class="at">fun =</span> theo_uniform, <span class="at">xlim =</span> <span class="fu">c</span>(<span class="sc">-</span><span class="dv">180</span>, <span class="dv">180</span>), <span class="at">linewidth =</span> <span class="dv">1</span>) <span class="sc">+</span></span>
+<span id="cb4-83"><a href="#cb4-83" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_brewer</span>(<span class="at">palette =</span> <span class="st">"Dark2"</span>) <span class="sc">+</span></span>
+<span id="cb4-84"><a href="#cb4-84" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Visual feedback offset"</span>, <span class="at">y =</span> <span class="st">"proportion of FB trials"</span>, <span class="at">color =</span> <span class="cn">NULL</span>) <span class="sc">+</span></span>
+<span id="cb4-85"><a href="#cb4-85" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb4-86"><a href="#cb4-86" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(</span>
+<span id="cb4-87"><a href="#cb4-87" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.title =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">12</span>),</span>
+<span id="cb4-88"><a href="#cb4-88" aria-hidden="true" tabindex="-1"></a>    <span class="at">axis.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">10</span>),</span>
+<span id="cb4-89"><a href="#cb4-89" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.position =</span> <span class="st">"inside"</span>, <span class="at">legend.position.inside =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-90"><a href="#cb4-90" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.justification =</span> <span class="fu">c</span>(<span class="dv">1</span>, <span class="dv">1</span>),</span>
+<span id="cb4-91"><a href="#cb4-91" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.text =</span> <span class="fu">element_text</span>(<span class="at">size =</span> <span class="dv">10</span>),</span>
+<span id="cb4-92"><a href="#cb4-92" aria-hidden="true" tabindex="-1"></a>    <span class="at">legend.key.size =</span> <span class="fu">unit</span>(<span class="fl">1.2</span>, <span class="st">"lines"</span>)</span>
+<span id="cb4-93"><a href="#cb4-93" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb4-94"><a href="#cb4-94" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb4-95"><a href="#cb4-95" aria-hidden="true" tabindex="-1"></a>plot_target</span>
+<span id="cb4-96"><a href="#cb4-96" aria-hidden="true" tabindex="-1"></a>plot_fb_offset</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output-display">
-<div id="fig-stimulus-design" class="quarto-float quarto-figure quarto-figure-center anchored">
+<div id="fig-stimulus-design" class="quarto-layout-panel">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-stimulus-design-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="heading-estimation-multisensory-proc_files/figure-html/fig-stimulus-design-1.png" class="img-fluid figure-img" width="960">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-stimulus-design" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-stimulus-design-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-stimulus-design-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-stimulus-design-1.png" id="fig-stimulus-design-1" class="img-fluid figure-img" data-ref-parent="fig-stimulus-design" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-stimulus-design-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-stimulus-design" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-stimulus-design-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-stimulus-design-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-stimulus-design-2.png" id="fig-stimulus-design-2" class="img-fluid figure-img" data-ref-parent="fig-stimulus-design" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-stimulus-design-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-stimulus-design-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 Figure&nbsp;1: <strong>Distributions of target heading and visual feedback offset across participants</strong>
 </figcaption>
 </figure>
 </div>
-</div>
-</div>
 <ul>
-<li>Target headings are widely spread for all subjects (circular <span class="math inline">\(\rho\)</span> = 0.08 <span class="math inline">\(\pm\)</span> 0.26). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.</li>
-<li>Visual feedback offset distribution resembles a gaussian in the range of <span class="math inline">\(0^\circ \pm 3 \times 30^\circ\)</span> and uniform beyond that. For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant’s viewpoint. This resulted in 84.32% <span class="math inline">\(\pm\)</span> 3.66% marked as reliable.</li>
+<li>Target headings are widely spread for all subjects (circular <span class="math inline">\(\rho\)</span> = 0.08 <span class="math inline">\(\pm\)</span> 0.26) (<a href="#fig-stimulus-design-1" class="quarto-xref">Figure&nbsp;1 (a)</a>). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.</li>
+<li>Visual feedback offset distribution resembles a gaussian in the range of <span class="math inline">\(0^\circ \pm 3 \times 30^\circ\)</span> and uniform beyond that (<a href="#fig-stimulus-design-2" class="quarto-xref">Figure&nbsp;1 (b)</a>). For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant’s viewpoint. This resulted in 84.32% <span class="math inline">\(\pm\)</span> 3.66% marked as reliable.</li>
 </ul>
 </section>
 <section id="response-characteristics" class="level3">
 <h3 class="anchored" data-anchor-id="response-characteristics">Response Characteristics</h3>
-<div class="cell">
 <details class="code-fold">
 <summary></summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the number of bootstraps</span></span>
@@ -401,87 +417,95 @@ Figure&nbsp;1: <strong>Distributions of target heading and visual feedback offse
 <span id="cb5-21"><a href="#cb5-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
 <span id="cb5-22"><a href="#cb5-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">breaks =</span> target_bin_ticks) <span class="sc">+</span></span>
 <span id="cb5-23"><a href="#cb5-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
-<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"Mean(respond) with 95% bootstrap CI"</span>)</span>
-<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute the median of error per target bins</span></span>
-<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a>error_boot_by_bin <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
-<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins) <span class="sc">%&gt;%</span></span>
-<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(target_bin) <span class="sc">%&gt;%</span></span>
-<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Stratify by participants</span></span>
-<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
-<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
-<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
-<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
-<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
-<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>      <span class="fu">median</span>(samp<span class="sc">$</span>error)</span>
-<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
-<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
-<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">median =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
-<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>  })</span>
-<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for error vs. target</span></span>
-<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a>plot_B <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(error_boot_by_bin, <span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> median)) <span class="sc">+</span></span>
-<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
-<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">breaks =</span> target_bin_ticks) <span class="sc">+</span></span>
-<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
-<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"Median(error) with 95% bootstrap CI"</span>)</span>
-<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a><span class="co"># Display both plots in a 1 x 2 grid</span></span>
-<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a><span class="fu">grid.arrange</span>(plot_A, plot_B, <span class="at">ncol =</span> <span class="dv">2</span>)</span>
-<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a><span class="co"># Is error truly positively biased?</span></span>
-<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a>error_wilcox <span class="ot">&lt;-</span> <span class="fu">wilcox.test</span>(train<span class="sc">$</span>error, <span class="at">mu =</span> <span class="dv">0</span>)</span>
-<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a>subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(train<span class="sc">$</span>subj)</span>
-<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a>median_error_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
-<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
-<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>  <span class="fu">median</span>(samp<span class="sc">$</span>error)</span>
-<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
-<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a>median_error_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(median_error_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
-<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a><span class="co"># Does error stay constant (flat trend) across target?</span></span>
-<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlling for individual subjects</span></span>
-<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a>error_slope_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
-<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
-<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coef</span>(<span class="fu">rq</span>(error <span class="sc">~</span> target, <span class="at">tau =</span> <span class="fl">0.5</span>, <span class="at">data =</span> samp))[<span class="st">"target"</span>]</span>
-<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
-<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a>error_slope_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(error_slope_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
-<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a><span class="co"># Is respond's variance coming directly from error rather than target?</span></span>
-<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a><span class="co"># ie. check if the last term in Var(respond) = var(target) + var(error) + 2 cov(target, error) -&gt; 0</span></span>
-<span id="cb5-70"><a href="#cb5-70" aria-hidden="true" tabindex="-1"></a><span class="co"># Repeated measures correlation controls for subject to avoid pooling across subjects</span></span>
-<span id="cb5-71"><a href="#cb5-71" aria-hidden="true" tabindex="-1"></a>respond_error_rmcorr <span class="ot">&lt;-</span> <span class="fu">rmcorr</span>(subj, target, error, <span class="at">dataset =</span> train)</span>
-<span id="cb5-72"><a href="#cb5-72" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb5-73"><a href="#cb5-73" aria-hidden="true" tabindex="-1"></a><span class="co"># Does the variance of error grow across target bins?</span></span>
-<span id="cb5-74"><a href="#cb5-74" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlling for individual subjects</span></span>
-<span id="cb5-75"><a href="#cb5-75" aria-hidden="true" tabindex="-1"></a>error_sd_boot_by_bin <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
-<span id="cb5-76"><a href="#cb5-76" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins) <span class="sc">%&gt;%</span></span>
-<span id="cb5-77"><a href="#cb5-77" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(target_bin) <span class="sc">%&gt;%</span></span>
-<span id="cb5-78"><a href="#cb5-78" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
-<span id="cb5-79"><a href="#cb5-79" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
-<span id="cb5-80"><a href="#cb5-80" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
-<span id="cb5-81"><a href="#cb5-81" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
-<span id="cb5-82"><a href="#cb5-82" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
-<span id="cb5-83"><a href="#cb5-83" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sd</span>(samp<span class="sc">$</span>error)</span>
-<span id="cb5-84"><a href="#cb5-84" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
-<span id="cb5-85"><a href="#cb5-85" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
-<span id="cb5-86"><a href="#cb5-86" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">sd =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
-<span id="cb5-87"><a href="#cb5-87" aria-hidden="true" tabindex="-1"></a>  })</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb5-24"><a href="#cb5-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb5-25"><a href="#cb5-25" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"Mean(respond) with 95% bootstrap CI"</span>)</span>
+<span id="cb5-26"><a href="#cb5-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-27"><a href="#cb5-27" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute the median of error per target bins</span></span>
+<span id="cb5-28"><a href="#cb5-28" aria-hidden="true" tabindex="-1"></a>error_boot_by_bin <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb5-29"><a href="#cb5-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins) <span class="sc">%&gt;%</span></span>
+<span id="cb5-30"><a href="#cb5-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(target_bin) <span class="sc">%&gt;%</span></span>
+<span id="cb5-31"><a href="#cb5-31" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Stratify by participants</span></span>
+<span id="cb5-32"><a href="#cb5-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
+<span id="cb5-33"><a href="#cb5-33" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
+<span id="cb5-34"><a href="#cb5-34" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
+<span id="cb5-35"><a href="#cb5-35" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb5-36"><a href="#cb5-36" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb5-37"><a href="#cb5-37" aria-hidden="true" tabindex="-1"></a>      <span class="fu">median</span>(samp<span class="sc">$</span>error)</span>
+<span id="cb5-38"><a href="#cb5-38" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
+<span id="cb5-39"><a href="#cb5-39" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb5-40"><a href="#cb5-40" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">median =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
+<span id="cb5-41"><a href="#cb5-41" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb5-42"><a href="#cb5-42" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for error vs. target</span></span>
+<span id="cb5-43"><a href="#cb5-43" aria-hidden="true" tabindex="-1"></a>plot_B <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(error_boot_by_bin, <span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> median)) <span class="sc">+</span></span>
+<span id="cb5-44"><a href="#cb5-44" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
+<span id="cb5-45"><a href="#cb5-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">breaks =</span> target_bin_ticks) <span class="sc">+</span></span>
+<span id="cb5-46"><a href="#cb5-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb5-47"><a href="#cb5-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb5-48"><a href="#cb5-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"Median(error) with 95% bootstrap CI"</span>)</span>
+<span id="cb5-49"><a href="#cb5-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-50"><a href="#cb5-50" aria-hidden="true" tabindex="-1"></a>plot_A</span>
+<span id="cb5-51"><a href="#cb5-51" aria-hidden="true" tabindex="-1"></a>plot_B</span>
+<span id="cb5-52"><a href="#cb5-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-53"><a href="#cb5-53" aria-hidden="true" tabindex="-1"></a><span class="co"># Is error truly positively biased?</span></span>
+<span id="cb5-54"><a href="#cb5-54" aria-hidden="true" tabindex="-1"></a>error_wilcox <span class="ot">&lt;-</span> <span class="fu">wilcox.test</span>(train<span class="sc">$</span>error, <span class="at">mu =</span> <span class="dv">0</span>)</span>
+<span id="cb5-55"><a href="#cb5-55" aria-hidden="true" tabindex="-1"></a>subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(train<span class="sc">$</span>subj)</span>
+<span id="cb5-56"><a href="#cb5-56" aria-hidden="true" tabindex="-1"></a>median_error_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb5-57"><a href="#cb5-57" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb5-58"><a href="#cb5-58" aria-hidden="true" tabindex="-1"></a>  <span class="fu">median</span>(samp<span class="sc">$</span>error)</span>
+<span id="cb5-59"><a href="#cb5-59" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
+<span id="cb5-60"><a href="#cb5-60" aria-hidden="true" tabindex="-1"></a>median_error_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(median_error_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb5-61"><a href="#cb5-61" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-62"><a href="#cb5-62" aria-hidden="true" tabindex="-1"></a><span class="co"># Does error stay constant (flat trend) across target?</span></span>
+<span id="cb5-63"><a href="#cb5-63" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlling for individual subjects</span></span>
+<span id="cb5-64"><a href="#cb5-64" aria-hidden="true" tabindex="-1"></a>error_slope_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb5-65"><a href="#cb5-65" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb5-66"><a href="#cb5-66" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coef</span>(<span class="fu">rq</span>(error <span class="sc">~</span> target, <span class="at">tau =</span> <span class="fl">0.5</span>, <span class="at">data =</span> samp))[<span class="st">"target"</span>]</span>
+<span id="cb5-67"><a href="#cb5-67" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
+<span id="cb5-68"><a href="#cb5-68" aria-hidden="true" tabindex="-1"></a>error_slope_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(error_slope_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb5-69"><a href="#cb5-69" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb5-70"><a href="#cb5-70" aria-hidden="true" tabindex="-1"></a><span class="co"># Is respond's variance coming directly from error rather than target?</span></span>
+<span id="cb5-71"><a href="#cb5-71" aria-hidden="true" tabindex="-1"></a><span class="co"># ie. check if the last term in Var(respond) = var(target) + var(error) + 2 cov(target, error) -&gt; 0</span></span>
+<span id="cb5-72"><a href="#cb5-72" aria-hidden="true" tabindex="-1"></a><span class="co"># Repeated measures correlation controls for subject to avoid pooling across subjects</span></span>
+<span id="cb5-73"><a href="#cb5-73" aria-hidden="true" tabindex="-1"></a>respond_error_rmcorr <span class="ot">&lt;-</span> <span class="fu">rmcorr</span>(subj, target, error, <span class="at">dataset =</span> train)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output-display">
-<div id="fig-respond-error-by-target" class="quarto-float quarto-figure quarto-figure-center anchored">
+<div id="fig-respond-error-by-target" class="quarto-layout-panel">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-respond-error-by-target-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="heading-estimation-multisensory-proc_files/figure-html/fig-respond-error-by-target-1.png" class="img-fluid figure-img" width="960">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-respond-error-by-target" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-respond-error-by-target-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-respond-error-by-target-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-respond-error-by-target-1.png" id="fig-respond-error-by-target-1" class="img-fluid figure-img" data-ref-parent="fig-respond-error-by-target" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-respond-error-by-target-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-respond-error-by-target" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-respond-error-by-target-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-respond-error-by-target-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-respond-error-by-target-2.png" id="fig-respond-error-by-target-2" class="img-fluid figure-img" data-ref-parent="fig-respond-error-by-target" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-respond-error-by-target-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-respond-error-by-target-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 Figure&nbsp;2: <strong>Mean respond and median error across target heading bins</strong>
 </figcaption>
 </figure>
 </div>
-</div>
-</div>
 <ul>
-<li>Respond angle increases monotonically with target, consistent with <code>respond</code> = <code>target</code> + <code>error</code> relationship. The width of the bootstrapped (<code>1000</code>) 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainity with increasing difficulty of the task.</li>
-<li>Median error is consistently positive (Wilcoxon signed-rank test, p &lt; 0.001; bootstrapped median 95% CI [10.47, 23.42]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [-0.027, 0.058]). However, the width of the bootstrapped (<code>1000</code>) 95% CI for mean error increases with target angle just like respond.</li>
+<li>Respond angle increases monotonically with target, consistent with <code>respond</code> = <code>target</code> + <code>error</code> relationship (<a href="#fig-respond-error-by-target-1" class="quarto-xref">Figure&nbsp;2 (a)</a>). The width of the bootstrapped (<code>1000</code>) 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainity with increasing difficulty of the task.</li>
+<li>Median error is consistently positive (Wilcoxon signed-rank test, p &lt; 0.001; bootstrapped median 95% CI [10.47, 23.42]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [-0.027, 0.058]). However, the width of the bootstrapped (<code>1000</code>) 95% CI for mean error increases with target angle just like respond (<a href="#fig-respond-error-by-target-2" class="quarto-xref">Figure&nbsp;2 (b)</a>).</li>
 <li>The growing uncertainty in <code>respond</code> tracks <code>error</code> directly, since:</li>
 </ul>
 <p><span class="math display">\[
@@ -490,8 +514,7 @@ Figure&nbsp;2: <strong>Mean respond and median error across target heading bins<
 \implies &amp;Var(respond) = Var(target) + Var(error) + 2\;Cov(target, error)
 \end{aligned}
 \]</span></p>
-<p>The repeated measures correlation between <code>target</code> and <code>error</code> is negligible (<span class="math inline">\(r\)</span> = 0.032, 95% CI [0.009, 0.054]). Thus, <code>error</code> can be used as the predicting variable instead of <code>respond</code> to model participant’s uncertainity.</p>
-<div class="cell">
+<p>The repeated measures correlation between <code>target</code> and <code>error</code> is negligible (<span class="math inline">\(r\)</span> = 0.032, 95% CI [0.009, 0.054]). Thus, <code>error</code> can be used as the predicting variable instead of <code>respond</code> to model participant’s response.</p>
 <details class="code-fold">
 <summary></summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute the median error per condition</span></span>
@@ -547,8 +570,8 @@ Figure&nbsp;2: <strong>Mean respond and median error across target heading bins<
 <span id="cb6-51"><a href="#cb6-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
 <span id="cb6-52"><a href="#cb6-52" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Visual feedback offset magnitude"</span>, <span class="at">y =</span> <span class="st">"Median(error) with 95% bootstrap CI"</span>)</span>
 <span id="cb6-53"><a href="#cb6-53" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a><span class="co"># Display both plots in a 1 x 2 grid</span></span>
-<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a><span class="fu">grid.arrange</span>(plot_C, plot_D, <span class="at">ncol =</span> <span class="dv">2</span>)</span>
+<span id="cb6-54"><a href="#cb6-54" aria-hidden="true" tabindex="-1"></a>plot_C</span>
+<span id="cb6-55"><a href="#cb6-55" aria-hidden="true" tabindex="-1"></a>plot_D</span>
 <span id="cb6-56"><a href="#cb6-56" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-57"><a href="#cb6-57" aria-hidden="true" tabindex="-1"></a><span class="co"># Does error's median differ between noFB and FB conditions?</span></span>
 <span id="cb6-58"><a href="#cb6-58" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlled for subjects</span></span>
@@ -566,23 +589,297 @@ Figure&nbsp;2: <strong>Mean respond and median error across target heading bins<
 <span id="cb6-70"><a href="#cb6-70" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
 <span id="cb6-71"><a href="#cb6-71" aria-hidden="true" tabindex="-1"></a>offset_slope_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(offset_slope_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
-<div class="cell-output-display">
-<div id="fig-error-by-condition-offset" class="quarto-float quarto-figure quarto-figure-center anchored">
+<div id="fig-error-by-condition-offset" class="quarto-layout-panel">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-error-by-condition-offset-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="heading-estimation-multisensory-proc_files/figure-html/fig-error-by-condition-offset-1.png" class="img-fluid figure-img" width="960">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-error-by-condition-offset" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-error-by-condition-offset-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-error-by-condition-offset-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-error-by-condition-offset-1.png" id="fig-error-by-condition-offset-1" class="img-fluid figure-img" data-ref-parent="fig-error-by-condition-offset" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-error-by-condition-offset-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-error-by-condition-offset" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-error-by-condition-offset-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-error-by-condition-offset-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-error-by-condition-offset-2.png" id="fig-error-by-condition-offset-2" class="img-fluid figure-img" data-ref-parent="fig-error-by-condition-offset" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-error-by-condition-offset-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
 </div>
 <figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-error-by-condition-offset-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
 Figure&nbsp;3: <strong>Median error by condition and by visual feedback offset magnitude</strong>
 </figcaption>
 </figure>
 </div>
+<ul>
+<li>Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [2.23, 6.71]), consistent with varying reliability of the visual feedback (<a href="#fig-error-by-condition-offset-1" class="quarto-xref">Figure&nbsp;3 (a)</a>). The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>.</li>
+<li>But the median error does not increase monotonically with offset magnitude (bootstrapped 95% CI for median regression slope [0.043, 0.087]) (<a href="#fig-error-by-condition-offset-2" class="quarto-xref">Figure&nbsp;3 (b)</a>). The reliability of the cue itself is taken into consideration beyond a certain limit (around 60<span class="math inline">\(^\circ\)</span> in this case). The extent of integration between proprioception and vision depends more on the size of the conflict between the information from both sources and less on the uncertainity of the information itself <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>.</li>
+</ul>
+<details class="code-fold">
+<summary></summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Does the variance of error grow across target bins?</span></span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlling for individual subjects</span></span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>error_sd_boot_by_bin <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins) <span class="sc">%&gt;%</span></span>
+<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(target_bin) <span class="sc">%&gt;%</span></span>
+<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
+<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
+<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
+<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sd</span>(samp<span class="sc">$</span>error)</span>
+<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
+<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">sd =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
+<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for error's SD vs. target</span></span>
+<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a>plot_E <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(error_sd_boot_by_bin, <span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> sd)) <span class="sc">+</span></span>
+<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
+<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">breaks =</span> target_bin_ticks) <span class="sc">+</span></span>
+<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"SD(error) with 95% bootstrap CI"</span>)</span>
+<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Does error's SD differ between noFB and FB conditions?</span></span>
+<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlled for subjects</span></span>
+<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>condition_sd_boot <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(condition) <span class="sc">%&gt;%</span></span>
+<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
+<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>    group_data <span class="ot">&lt;-</span> .x</span>
+<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>    group_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(group_data<span class="sc">$</span>subj)</span>
+<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(group_subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> group_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sd</span>(samp<span class="sc">$</span>error)</span>
+<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
+<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">sd =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
+<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for error's SD vs. condition</span></span>
+<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a>plot_F <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(condition_sd_boot, <span class="fu">aes</span>(<span class="at">x =</span> condition, <span class="at">y =</span> sd)) <span class="sc">+</span></span>
+<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
+<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">labels =</span> <span class="fu">c</span>(<span class="at">noFB =</span> <span class="st">"No Feedback"</span>, <span class="at">FB =</span> <span class="st">"Feedback"</span>)) <span class="sc">+</span></span>
+<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Condition"</span>, <span class="at">y =</span> <span class="st">"SD(error) with 95% bootstrap CI"</span>)</span>
+<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-45"><a href="#cb7-45" aria-hidden="true" tabindex="-1"></a><span class="co"># Does error's SD grow with the magnitude of fb_offset?</span></span>
+<span id="cb7-46"><a href="#cb7-46" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlled for subjects</span></span>
+<span id="cb7-47"><a href="#cb7-47" aria-hidden="true" tabindex="-1"></a>offset_sd_boot_by_bin <span class="ot">&lt;-</span> fb_data <span class="sc">%&gt;%</span></span>
+<span id="cb7-48"><a href="#cb7-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">offset_bin =</span> offset_bins) <span class="sc">%&gt;%</span></span>
+<span id="cb7-49"><a href="#cb7-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(offset_bin) <span class="sc">%&gt;%</span></span>
+<span id="cb7-50"><a href="#cb7-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
+<span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
+<span id="cb7-52"><a href="#cb7-52" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
+<span id="cb7-53"><a href="#cb7-53" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb7-54"><a href="#cb7-54" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb7-55"><a href="#cb7-55" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sd</span>(samp<span class="sc">$</span>error)</span>
+<span id="cb7-56"><a href="#cb7-56" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
+<span id="cb7-57"><a href="#cb7-57" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb7-58"><a href="#cb7-58" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">sd =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
+<span id="cb7-59"><a href="#cb7-59" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb7-60"><a href="#cb7-60" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for error's SD vs. |fb_offset|</span></span>
+<span id="cb7-61"><a href="#cb7-61" aria-hidden="true" tabindex="-1"></a>plot_G <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(offset_sd_boot_by_bin, <span class="fu">aes</span>(<span class="at">x =</span> offset_bin, <span class="at">y =</span> sd)) <span class="sc">+</span></span>
+<span id="cb7-62"><a href="#cb7-62" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
+<span id="cb7-63"><a href="#cb7-63" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb7-64"><a href="#cb7-64" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb7-65"><a href="#cb7-65" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Visual feedback offset magnitude"</span>, <span class="at">y =</span> <span class="st">"SD(error) with 95% bootstrap CI"</span>)</span>
+<span id="cb7-66"><a href="#cb7-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-67"><a href="#cb7-67" aria-hidden="true" tabindex="-1"></a>plot_E</span>
+<span id="cb7-68"><a href="#cb7-68" aria-hidden="true" tabindex="-1"></a>plot_F</span>
+<span id="cb7-69"><a href="#cb7-69" aria-hidden="true" tabindex="-1"></a>plot_G</span>
+<span id="cb7-70"><a href="#cb7-70" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-71"><a href="#cb7-71" aria-hidden="true" tabindex="-1"></a><span class="co"># Does error's SD differ between noFB and FB conditions? (magnitude of the difference)</span></span>
+<span id="cb7-72"><a href="#cb7-72" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlled for subjects</span></span>
+<span id="cb7-73"><a href="#cb7-73" aria-hidden="true" tabindex="-1"></a>condition_sd_diff_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb7-74"><a href="#cb7-74" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb7-75"><a href="#cb7-75" aria-hidden="true" tabindex="-1"></a>  <span class="fu">sd</span>(samp<span class="sc">$</span>error[samp<span class="sc">$</span>condition <span class="sc">==</span> <span class="st">"FB"</span>]) <span class="sc">-</span> <span class="fu">sd</span>(samp<span class="sc">$</span>error[samp<span class="sc">$</span>condition <span class="sc">==</span> <span class="st">"noFB"</span>])</span>
+<span id="cb7-76"><a href="#cb7-76" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
+<span id="cb7-77"><a href="#cb7-77" aria-hidden="true" tabindex="-1"></a>condition_sd_diff_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(condition_sd_diff_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb7-78"><a href="#cb7-78" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb7-79"><a href="#cb7-79" aria-hidden="true" tabindex="-1"></a><span class="co"># Does |error| (1/accuracy) change with viewAmount (attention paid to the feedback cue)?</span></span>
+<span id="cb7-80"><a href="#cb7-80" aria-hidden="true" tabindex="-1"></a><span class="co"># FB trials only; controlled for subjects</span></span>
+<span id="cb7-81"><a href="#cb7-81" aria-hidden="true" tabindex="-1"></a>accuracy_view_amount_slope_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb7-82"><a href="#cb7-82" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> fb_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb7-83"><a href="#cb7-83" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coef</span>(<span class="fu">rq</span>(<span class="fu">abs</span>(error) <span class="sc">~</span> viewAmount, <span class="at">tau =</span> <span class="fl">0.5</span>, <span class="at">data =</span> samp))[<span class="st">"viewAmount"</span>]</span>
+<span id="cb7-84"><a href="#cb7-84" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
+<span id="cb7-85"><a href="#cb7-85" aria-hidden="true" tabindex="-1"></a>accuracy_view_amount_slope_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(accuracy_view_amount_slope_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="fig-error-variance" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-error-variance-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-error-variance" style="flex-basis: 33.3%;justify-content: flex-start;">
+<div id="fig-error-variance-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="384">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-error-variance-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-error-variance-1.png" id="fig-error-variance-1" class="img-fluid figure-img" data-ref-parent="fig-error-variance" width="384">
 </div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-error-variance-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-error-variance" style="flex-basis: 33.3%;justify-content: flex-start;">
+<div id="fig-error-variance-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="384">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-error-variance-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-error-variance-2.png" id="fig-error-variance-2" class="img-fluid figure-img" data-ref-parent="fig-error-variance" width="384">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-error-variance-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-error-variance" style="flex-basis: 33.3%;justify-content: flex-start;">
+<div id="fig-error-variance-3" class="quarto-float quarto-figure quarto-figure-center anchored" width="384">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-error-variance-3-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-error-variance-3.png" id="fig-error-variance-3" class="img-fluid figure-img" data-ref-parent="fig-error-variance" width="384">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-error-variance-3-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(c)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-error-variance-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;4: <strong>SD of error across target heading bins, condition, and visual feedback offset magnitude</strong>
+</figcaption>
+</figure>
 </div>
 <ul>
-<li>Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [2.1, 6.64]), consistent with varying reliability of the visual feedback. The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>.</li>
-<li>But the median error does not increase monotonically with offset magnitude (bootstrapped 95% CI for median regression slope [0.04, 0.09]). The reliability of the cue itself is taken into consideration beyond a certain limit (around 60<span class="math inline">\(^\circ\)</span> in this case). The extent of integration between proprioception and vision depends more on the size of the conflict between the information from both sources and less on the uncertainity of the information itself <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>.</li>
+<li>Standard deviation (SD) of error maybe a measure of uncertainity about the information. As <a href="#fig-error-variance-1" class="quarto-xref">Figure&nbsp;4 (a)</a> shows, SD of error grows with task difficulty, but it rises in two phases separated by a plateau in the range of 120<span class="math inline">\(^\circ\)</span> to 240<span class="math inline">\(^\circ\)</span>.</li>
+<li>The amount of uncertainity was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference = [3.17, 9.74]) (<a href="#fig-error-variance-2" class="quarto-xref">Figure&nbsp;4 (b)</a>).</li>
+<li>The amount of uncertainity rises with unreliability of the visual feedback but then plateaus around 60<span class="math inline">\(^\circ\)</span> (<a href="#fig-error-variance-3" class="quarto-xref">Figure&nbsp;4 (c)</a>). The internal model might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information.</li>
 </ul>
+<p>From the above characteristics of the participants’ responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>, but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources.</p>
+<p>Accuracy (1/|<code>error</code>|) improves as attention increases (<code>viewAmount</code> decreases) (bootstrapped 95% CI for the median regression slope [0.27, 0.772]). The accuracy of the best model will be validated against this behavioral characteritic.</p>
+</section>
+<section id="subjective-measure-make-it-more-descriptive" class="level3">
+<h3 class="anchored" data-anchor-id="subjective-measure-make-it-more-descriptive">Subjective Measure (make it more descriptive)</h3>
+<details class="code-fold">
+<summary></summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Compute the median of conf per target bins</span></span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a>conf_median_boot_by_bin <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb8-3"><a href="#cb8-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins) <span class="sc">%&gt;%</span></span>
+<span id="cb8-4"><a href="#cb8-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(target_bin) <span class="sc">%&gt;%</span></span>
+<span id="cb8-5"><a href="#cb8-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
+<span id="cb8-6"><a href="#cb8-6" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
+<span id="cb8-7"><a href="#cb8-7" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
+<span id="cb8-8"><a href="#cb8-8" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb8-9"><a href="#cb8-9" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb8-10"><a href="#cb8-10" aria-hidden="true" tabindex="-1"></a>      <span class="fu">median</span>(samp<span class="sc">$</span>conf)</span>
+<span id="cb8-11"><a href="#cb8-11" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
+<span id="cb8-12"><a href="#cb8-12" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb8-13"><a href="#cb8-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">median =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
+<span id="cb8-14"><a href="#cb8-14" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb8-15"><a href="#cb8-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for conf vs. target</span></span>
+<span id="cb8-16"><a href="#cb8-16" aria-hidden="true" tabindex="-1"></a>plot_H <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(conf_median_boot_by_bin, <span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> median)) <span class="sc">+</span></span>
+<span id="cb8-17"><a href="#cb8-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
+<span id="cb8-18"><a href="#cb8-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">breaks =</span> target_bin_ticks) <span class="sc">+</span></span>
+<span id="cb8-19"><a href="#cb8-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb8-20"><a href="#cb8-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb8-21"><a href="#cb8-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"Median(conf) with 95% bootstrap CI"</span>)</span>
+<span id="cb8-22"><a href="#cb8-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-23"><a href="#cb8-23" aria-hidden="true" tabindex="-1"></a><span class="co"># Does subjective confidence (conf) grow with target (task difficulty)?</span></span>
+<span id="cb8-24"><a href="#cb8-24" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlled for subjects</span></span>
+<span id="cb8-25"><a href="#cb8-25" aria-hidden="true" tabindex="-1"></a>conf_target_slope_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb8-26"><a href="#cb8-26" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb8-27"><a href="#cb8-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coef</span>(<span class="fu">rq</span>(conf <span class="sc">~</span> target, <span class="at">tau =</span> <span class="fl">0.5</span>, <span class="at">data =</span> samp))[<span class="st">"target"</span>]</span>
+<span id="cb8-28"><a href="#cb8-28" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
+<span id="cb8-29"><a href="#cb8-29" aria-hidden="true" tabindex="-1"></a>conf_target_slope_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(conf_target_slope_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb8-30"><a href="#cb8-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-31"><a href="#cb8-31" aria-hidden="true" tabindex="-1"></a><span class="co"># Does conf's SD also grow with target?</span></span>
+<span id="cb8-32"><a href="#cb8-32" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlling for individual subjects</span></span>
+<span id="cb8-33"><a href="#cb8-33" aria-hidden="true" tabindex="-1"></a>conf_sd_boot_by_bin <span class="ot">&lt;-</span> train <span class="sc">%&gt;%</span></span>
+<span id="cb8-34"><a href="#cb8-34" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">target_bin =</span> target_bins) <span class="sc">%&gt;%</span></span>
+<span id="cb8-35"><a href="#cb8-35" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(target_bin) <span class="sc">%&gt;%</span></span>
+<span id="cb8-36"><a href="#cb8-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_modify</span>(<span class="sc">~</span> {</span>
+<span id="cb8-37"><a href="#cb8-37" aria-hidden="true" tabindex="-1"></a>    bin_data <span class="ot">&lt;-</span> .x</span>
+<span id="cb8-38"><a href="#cb8-38" aria-hidden="true" tabindex="-1"></a>    bin_subjs <span class="ot">&lt;-</span> <span class="fu">unique</span>(bin_data<span class="sc">$</span>subj)</span>
+<span id="cb8-39"><a href="#cb8-39" aria-hidden="true" tabindex="-1"></a>    b <span class="ot">&lt;-</span> <span class="fu">boot</span>(bin_subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb8-40"><a href="#cb8-40" aria-hidden="true" tabindex="-1"></a>      samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> bin_data <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb8-41"><a href="#cb8-41" aria-hidden="true" tabindex="-1"></a>      <span class="fu">sd</span>(samp<span class="sc">$</span>conf)</span>
+<span id="cb8-42"><a href="#cb8-42" aria-hidden="true" tabindex="-1"></a>    }, <span class="at">R =</span> R_boot)</span>
+<span id="cb8-43"><a href="#cb8-43" aria-hidden="true" tabindex="-1"></a>    ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(b, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span>
+<span id="cb8-44"><a href="#cb8-44" aria-hidden="true" tabindex="-1"></a>    <span class="fu">tibble</span>(<span class="at">sd =</span> b<span class="sc">$</span>t0, <span class="at">ci_low =</span> ci[<span class="dv">1</span>], <span class="at">ci_high =</span> ci[<span class="dv">2</span>])</span>
+<span id="cb8-45"><a href="#cb8-45" aria-hidden="true" tabindex="-1"></a>  })</span>
+<span id="cb8-46"><a href="#cb8-46" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for conf's SD vs. target</span></span>
+<span id="cb8-47"><a href="#cb8-47" aria-hidden="true" tabindex="-1"></a>plot_I <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(conf_sd_boot_by_bin, <span class="fu">aes</span>(<span class="at">x =</span> target_bin, <span class="at">y =</span> sd)) <span class="sc">+</span></span>
+<span id="cb8-48"><a href="#cb8-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_pointrange</span>(<span class="fu">aes</span>(<span class="at">ymin =</span> ci_low, <span class="at">ymax =</span> ci_high)) <span class="sc">+</span></span>
+<span id="cb8-49"><a href="#cb8-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_discrete</span>(<span class="at">breaks =</span> target_bin_ticks) <span class="sc">+</span></span>
+<span id="cb8-50"><a href="#cb8-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb8-51"><a href="#cb8-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme</span>(<span class="at">axis.text.x =</span> <span class="fu">element_text</span>(<span class="at">angle =</span> <span class="dv">45</span>, <span class="at">hjust =</span> <span class="dv">1</span>)) <span class="sc">+</span></span>
+<span id="cb8-52"><a href="#cb8-52" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="st">"SD(conf) with 95% bootstrap CI"</span>)</span>
+<span id="cb8-53"><a href="#cb8-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-54"><a href="#cb8-54" aria-hidden="true" tabindex="-1"></a>plot_H</span>
+<span id="cb8-55"><a href="#cb8-55" aria-hidden="true" tabindex="-1"></a>plot_I</span>
+<span id="cb8-56"><a href="#cb8-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb8-57"><a href="#cb8-57" aria-hidden="true" tabindex="-1"></a><span class="co"># Does conf track |error| ie. 1/accuracy?</span></span>
+<span id="cb8-58"><a href="#cb8-58" aria-hidden="true" tabindex="-1"></a><span class="co"># Controlled for subjects</span></span>
+<span id="cb8-59"><a href="#cb8-59" aria-hidden="true" tabindex="-1"></a>conf_error_slope_boot <span class="ot">&lt;-</span> <span class="fu">boot</span>(subjs, <span class="cf">function</span>(d, i) {</span>
+<span id="cb8-60"><a href="#cb8-60" aria-hidden="true" tabindex="-1"></a>  samp <span class="ot">&lt;-</span> <span class="fu">map_dfr</span>(d[i], <span class="sc">~</span> train <span class="sc">%&gt;%</span> <span class="fu">filter</span>(subj <span class="sc">==</span> .x))</span>
+<span id="cb8-61"><a href="#cb8-61" aria-hidden="true" tabindex="-1"></a>  <span class="fu">coef</span>(<span class="fu">rq</span>(conf <span class="sc">~</span> <span class="fu">abs</span>(error), <span class="at">tau =</span> <span class="fl">0.5</span>, <span class="at">data =</span> samp))[<span class="st">"abs(error)"</span>]</span>
+<span id="cb8-62"><a href="#cb8-62" aria-hidden="true" tabindex="-1"></a>}, <span class="at">R =</span> R_boot)</span>
+<span id="cb8-63"><a href="#cb8-63" aria-hidden="true" tabindex="-1"></a>conf_error_slope_ci <span class="ot">&lt;-</span> <span class="fu">boot.ci</span>(conf_error_slope_boot, <span class="at">type =</span> <span class="st">"perc"</span>)<span class="sc">$</span>percent[<span class="dv">4</span><span class="sc">:</span><span class="dv">5</span>]</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="fig-conf-by-target" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-conf-by-target-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-conf-by-target" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-conf-by-target-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-conf-by-target-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-conf-by-target-1.png" id="fig-conf-by-target-1" class="img-fluid figure-img" data-ref-parent="fig-conf-by-target" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-conf-by-target-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-conf-by-target" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-conf-by-target-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-conf-by-target-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-conf-by-target-2.png" id="fig-conf-by-target-2" class="img-fluid figure-img" data-ref-parent="fig-conf-by-target" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-conf-by-target-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-conf-by-target-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;5: <strong>Median and SD of subjective confidence across target heading bins</strong>
+</figcaption>
+</figure>
+</div>
+<ul>
+<li>Subjective confidence reduces with task difficulty (bootstrapped 95% CI for the median regression slope [0.013, 0.038]) similar to error which is an objective measure of performance (<a href="#fig-conf-by-target-1" class="quarto-xref">Figure&nbsp;5 (a)</a>).</li>
+<li>But SD of this subjective measure does not grow with task difficulty (<a href="#fig-conf-by-target-2" class="quarto-xref">Figure&nbsp;5 (b)</a>).</li>
+<li>Confidence does not track performance accuracy (1/|<code>error</code>|) (bootstrapped 95% CI for the median regression slope [-0.014, 0.13]).</li>
+</ul>
+<p>Thus, participants track their performance based on the task’s difficulty and not on how well they actually did. The winning model’s internal uncertainity measure will be validated against these behavioral characteristics.</p>
 </section>
 </section>
 

@@ -135,9 +135,11 @@ test <- testing(remainder_split)
 ```{r}
 #| label: fig-stimulus-design
 #| fig-cap: "**Distributions of target heading and visual feedback offset across participants**"
+#| fig-subcap: true
+#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 10
+#| fig-width: 5
 #| fig-height: 6
 
 # Confirm almost similar concentration of target angles is present across each subject
@@ -155,12 +157,8 @@ target_bins <- cut(
   include.lowest = TRUE, labels = target_bin_labels
 )
 
-# Show every other bin label, always keeping the first and last bin
-n_bins <- length(target_bin_labels)
-target_bin_ticks <- target_bin_labels[c(TRUE, FALSE)]
-if (!(target_bin_labels[n_bins] %in% target_bin_ticks)) {
-  target_bin_ticks <- c(target_bin_ticks, target_bin_labels[n_bins])
-}
+# Show every 3rd bin label for even, uncluttered spacing
+target_bin_ticks <- target_bin_labels[seq(1, length(target_bin_labels), by = 3)]
 
 # Display distribution of target headings
 plot_target <- train %>%
@@ -238,21 +236,23 @@ plot_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
     legend.key.size = unit(1.2, "lines")
   )
 
-# Display both plots in a 1 x 2 grid
-grid.arrange(plot_target, plot_fb_offset, ncol = 2)
+plot_target
+plot_fb_offset
 ```
 
-- Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
-- Visual feedback offset distribution resembles a gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that. For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant's viewpoint. This resulted in `r round(reliability_mean, 4)*100`% $\pm$ `r 2*round(reliability_sd, 4)*100`% marked as reliable.
+- Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`) (@fig-stimulus-design-1). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
+- Visual feedback offset distribution resembles a gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that (@fig-stimulus-design-2). For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant's viewpoint. This resulted in `r round(reliability_mean, 4)*100`% $\pm$ `r 2*round(reliability_sd, 4)*100`% marked as reliable.
 
 ### Response Characteristics
 
 ```{r}
 #| label: fig-respond-error-by-target
 #| fig-cap: "**Mean respond and median error across target heading bins**"
+#| fig-subcap: true
+#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 10
+#| fig-width: 5
 #| fig-height: 6
 
 # Define the number of bootstraps
@@ -278,6 +278,7 @@ plot_A <- ggplot(respond_boot_by_bin, aes(x = target_bin, y = mean)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "Mean(respond) with 95% bootstrap CI")
 
 # Compute the median of error per target bins
@@ -300,10 +301,11 @@ plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = median)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "Median(error) with 95% bootstrap CI")
 
-# Display both plots in a 1 x 2 grid
-grid.arrange(plot_A, plot_B, ncol = 2)
+plot_A
+plot_B
 
 # Is error truly positively biased?
 error_wilcox <- wilcox.test(train$error, mu = 0)
@@ -326,26 +328,10 @@ error_slope_ci <- boot.ci(error_slope_boot, type = "perc")$percent[4:5]
 # ie. check if the last term in Var(respond) = var(target) + var(error) + 2 cov(target, error) -> 0
 # Repeated measures correlation controls for subject to avoid pooling across subjects
 respond_error_rmcorr <- rmcorr(subj, target, error, dataset = train)
-
-# Does the variance of error grow across target bins?
-# Controlling for individual subjects
-error_sd_boot_by_bin <- train %>%
-  mutate(target_bin = target_bins) %>%
-  group_by(target_bin) %>%
-  group_modify(~ {
-    bin_data <- .x
-    bin_subjs <- unique(bin_data$subj)
-    b <- boot(bin_subjs, function(d, i) {
-      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
-      sd(samp$error)
-    }, R = R_boot)
-    ci <- boot.ci(b, type = "perc")$percent[4:5]
-    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
-  })
 ```
 
-- Respond angle increases monotonically with target, consistent with `respond` = `target` + `error` relationship. The width of the bootstrapped (`1000`) 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainity with increasing difficulty of the task.
-- Median error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`]). However, the width of the bootstrapped (`1000`) 95% CI for mean error increases with target angle just like respond.
+- Respond angle increases monotonically with target, consistent with `respond` = `target` + `error` relationship (@fig-respond-error-by-target-1). The width of the bootstrapped (`1000`) 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainity with increasing difficulty of the task.
+- Median error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`]). However, the width of the bootstrapped (`1000`) 95% CI for mean error increases with target angle just like respond (@fig-respond-error-by-target-2).
 - The growing uncertainty in `respond` tracks `error` directly, since:
 
 $$
@@ -355,14 +341,16 @@ $$
 \end{aligned}
 $$
 
-  The repeated measures correlation between `target` and `error` is negligible ($r$ = `r round(respond_error_rmcorr$r, 3)`, 95% CI [`r round(respond_error_rmcorr$CI[1], 3)`, `r round(respond_error_rmcorr$CI[2], 3)`]). Thus, `error` can be used as the predicting variable instead of `respond` to model participant's uncertainity.
+  The repeated measures correlation between `target` and `error` is negligible ($r$ = `r round(respond_error_rmcorr$r, 3)`, 95% CI [`r round(respond_error_rmcorr$CI[1], 3)`, `r round(respond_error_rmcorr$CI[2], 3)`]). Thus, `error` can be used as the predicting variable instead of `respond` to model participant's response.
 
 ```{r}
 #| label: fig-error-by-condition-offset
 #| fig-cap: "**Median error by condition and by visual feedback offset magnitude**"
+#| fig-subcap: true
+#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 10
+#| fig-width: 5
 #| fig-height: 6
 
 # Compute the median error per condition
@@ -418,8 +406,8 @@ plot_D <- ggplot(offset_median_boot_by_bin, aes(x = offset_bin, y = median)) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Visual feedback offset magnitude", y = "Median(error) with 95% bootstrap CI")
 
-# Display both plots in a 1 x 2 grid
-grid.arrange(plot_C, plot_D, ncol = 2)
+plot_C
+plot_D
 
 # Does error's median differ between noFB and FB conditions?
 # Controlled for subjects
@@ -438,6 +426,194 @@ offset_slope_boot <- boot(subjs, function(d, i) {
 offset_slope_ci <- boot.ci(offset_slope_boot, type = "perc")$percent[4:5]
 ```
 
-- Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [`r round(condition_median_diff_ci[1], 2)`, `r round(condition_median_diff_ci[2], 2)`]), consistent with varying reliability of the visual feedback. The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense [@Noppeney_2021].
-- But the median error does not increase monotonically with offset magnitude (bootstrapped 95% CI for median regression slope [`r round(offset_slope_ci[1], 3)`, `r round(offset_slope_ci[2], 3)`]). The reliability of the cue itself is taken into consideration beyond a certain limit (around 60$^\circ$ in this case). The extent of integration between proprioception and vision depends more on the size of the conflict between the information from both sources and less on the uncertainity of the information itself [@Noppeney_2021].
+- Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [`r round(condition_median_diff_ci[1], 2)`, `r round(condition_median_diff_ci[2], 2)`]), consistent with varying reliability of the visual feedback (@fig-error-by-condition-offset-1). The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense [@Noppeney_2021].
+- But the median error does not increase monotonically with offset magnitude (bootstrapped 95% CI for median regression slope [`r round(offset_slope_ci[1], 3)`, `r round(offset_slope_ci[2], 3)`]) (@fig-error-by-condition-offset-2). The reliability of the cue itself is taken into consideration beyond a certain limit (around 60$^\circ$ in this case). The extent of integration between proprioception and vision depends more on the size of the conflict between the information from both sources and less on the uncertainity of the information itself [@Noppeney_2021].
+
+```{r}
+#| label: fig-error-variance
+#| fig-cap: "**SD of error across target heading bins, condition, and visual feedback offset magnitude**"
+#| fig-subcap: true
+#| layout-ncol: 3
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 4
+#| fig-height: 5
+
+# Does the variance of error grow across target bins?
+# Controlling for individual subjects
+error_sd_boot_by_bin <- train %>%
+  mutate(target_bin = target_bins) %>%
+  group_by(target_bin) %>%
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for error's SD vs. target
+plot_E <- ggplot(error_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Target Heading", y = "SD(error) with 95% bootstrap CI")
+
+# Does error's SD differ between noFB and FB conditions?
+# Controlled for subjects
+condition_sd_boot <- train %>%
+  group_by(condition) %>%
+  group_modify(~ {
+    group_data <- .x
+    group_subjs <- unique(group_data$subj)
+    b <- boot(group_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ group_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for error's SD vs. condition
+plot_F <- ggplot(condition_sd_boot, aes(x = condition, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(labels = c(noFB = "No Feedback", FB = "Feedback")) +
+  theme_classic() +
+  labs(x = "Condition", y = "SD(error) with 95% bootstrap CI")
+
+# Does error's SD grow with the magnitude of fb_offset?
+# Controlled for subjects
+offset_sd_boot_by_bin <- fb_data %>%
+  mutate(offset_bin = offset_bins) %>%
+  group_by(offset_bin) %>%
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for error's SD vs. |fb_offset|
+plot_G <- ggplot(offset_sd_boot_by_bin, aes(x = offset_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Visual feedback offset magnitude", y = "SD(error) with 95% bootstrap CI")
+
+plot_E
+plot_F
+plot_G
+
+# Does error's SD differ between noFB and FB conditions? (magnitude of the difference)
+# Controlled for subjects
+condition_sd_diff_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  sd(samp$error[samp$condition == "FB"]) - sd(samp$error[samp$condition == "noFB"])
+}, R = R_boot)
+condition_sd_diff_ci <- boot.ci(condition_sd_diff_boot, type = "perc")$percent[4:5]
+
+# Does |error| (1/accuracy) change with viewAmount (attention paid to the feedback cue)?
+# FB trials only; controlled for subjects
+accuracy_view_amount_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ fb_data %>% filter(subj == .x))
+  coef(rq(abs(error) ~ viewAmount, tau = 0.5, data = samp))["viewAmount"]
+}, R = R_boot)
+accuracy_view_amount_slope_ci <- boot.ci(accuracy_view_amount_slope_boot, type = "perc")$percent[4:5]
+```
+
+- Standard deviation (SD) of error maybe a measure of uncertainity about the information. As @fig-error-variance-1 shows, SD of error grows with task difficulty, but it rises in two phases separated by a plateau in the range of 120$^\circ$ to 240$^\circ$.
+- The amount of uncertainity was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference = [`r round(condition_sd_diff_ci[1], 2)`, `r round(condition_sd_diff_ci[2], 2)`]) (@fig-error-variance-2).
+- The amount of uncertainity rises with unreliability of the visual feedback but then plateaus around 60$^\circ$ (@fig-error-variance-3). The internal model might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information.
+
+From the above characteristics of the participants' responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities [@Noppeney_2021], but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources.
+
+Accuracy (1/|`error`|) improves as attention increases (`viewAmount` decreases) (bootstrapped 95% CI for the median regression slope [`r round(accuracy_view_amount_slope_ci[1], 3)`, `r round(accuracy_view_amount_slope_ci[2], 3)`]). The accuracy of the best model will be validated against this behavioral characteritic.
+
+### Subjective Measure (make it more descriptive)
+
+```{r}
+#| label: fig-conf-by-target
+#| fig-cap: "**Median and SD of subjective confidence across target heading bins**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 5
+#| fig-height: 6
+
+# Compute the median of conf per target bins
+conf_median_boot_by_bin <- train %>%
+  mutate(target_bin = target_bins) %>%
+  group_by(target_bin) %>%
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      median(samp$conf)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for conf vs. target
+plot_H <- ggplot(conf_median_boot_by_bin, aes(x = target_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Target Heading", y = "Median(conf) with 95% bootstrap CI")
+
+# Does subjective confidence (conf) grow with target (task difficulty)?
+# Controlled for subjects
+conf_target_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  coef(rq(conf ~ target, tau = 0.5, data = samp))["target"]
+}, R = R_boot)
+conf_target_slope_ci <- boot.ci(conf_target_slope_boot, type = "perc")$percent[4:5]
+
+# Does conf's SD also grow with target?
+# Controlling for individual subjects
+conf_sd_boot_by_bin <- train %>%
+  mutate(target_bin = target_bins) %>%
+  group_by(target_bin) %>%
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$conf)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  })
+# Define the plot for conf's SD vs. target
+plot_I <- ggplot(conf_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Target Heading", y = "SD(conf) with 95% bootstrap CI")
+
+plot_H
+plot_I
+
+# Does conf track |error| ie. 1/accuracy?
+# Controlled for subjects
+conf_error_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  coef(rq(conf ~ abs(error), tau = 0.5, data = samp))["abs(error)"]
+}, R = R_boot)
+conf_error_slope_ci <- boot.ci(conf_error_slope_boot, type = "perc")$percent[4:5]
+```
+
+- Subjective confidence reduces with task difficulty (bootstrapped 95% CI for the median regression slope [`r round(conf_target_slope_ci[1], 3)`, `r round(conf_target_slope_ci[2], 3)`]) similar to error which is an objective measure of performance (@fig-conf-by-target-1).
+- But SD of this subjective measure does not grow with task difficulty (@fig-conf-by-target-2).
+- Confidence does not track performance accuracy (1/|`error`|) (bootstrapped 95% CI for the median regression slope [`r round(conf_error_slope_ci[1], 3)`, `r round(conf_error_slope_ci[2], 3)`]).
+
+Thus, participants track their performance based on the task's difficulty and not on how well they actually did. The winning model's internal uncertainity measure will be validated against these behavioral characteristics.  
 
