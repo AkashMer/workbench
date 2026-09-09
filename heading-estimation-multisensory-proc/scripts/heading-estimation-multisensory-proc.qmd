@@ -54,6 +54,7 @@ library(gridExtra)
 library(boot)
 library(quantreg)
 library(rmcorr)
+library(gamlss)
 
 # Pin the here() root explicitly
 here::i_am("scripts/heading-estimation-multisensory-proc.qmd")
@@ -76,14 +77,14 @@ if (!file.exists(file.path(data_path, "dataconf.csv"))) {
 
 ```{r}
 #| label: preprocess-data
-#| code-summary: Load, preprocess and split data into train, validation and test splits
+#| code-summary: Load, preprocess and split data into train and test splits
 #| code-fold: true
 #| message: false
 
 # Load data
 dataconf <- read_csv(file.path(data_path, "dataconf.csv"))
 
-# Prepare the data for train, validation and test splits
+# Prepare the data for train and test splits
 data <- dataconf %>%
   # Convert the subject column into a factor
   mutate(subj = factor(as.integer(str_remove(subj, "^s")))) %>%
@@ -98,16 +99,11 @@ data <- dataconf %>%
   mutate(trial_type = if_else(condition == "noFB", "noFB", as.character(fb_validity))) %>%
   mutate(trial_type = factor(trial_type, levels = c("noFB", "reliable", "unreliable")))
 
-# Split into train (70%), validation (15%) and test (15%) by whole subjects
+# Split into train (80%) and test (20%) by whole subjects
 set.seed(246) # For reproducibility
-data_split <- group_initial_split(data, group = subj, prop = 0.7)
+data_split <- group_initial_split(data, group = subj, prop = 0.8)
 train <- training(data_split)
-remainder <- testing(data_split)
-
-# Split the remainder evenly into validation and test by whole subjects
-remainder_split <- group_initial_split(remainder, group = subj, prop = 0.5)
-validation <- training(remainder_split)
-test <- testing(remainder_split)
+test <- testing(data_split)
 ```
 
 `dataconf.csv` contains the following columns:
@@ -532,7 +528,7 @@ accuracy_view_amount_slope_ci <- boot.ci(accuracy_view_amount_slope_boot, type =
 
 From the above characteristics of the participants' responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities [@Noppeney_2021], but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources.
 
-Accuracy (1/|`error`|) improves as attention increases (`viewAmount` decreases) (bootstrapped 95% CI for the median regression slope [`r round(accuracy_view_amount_slope_ci[1], 3)`, `r round(accuracy_view_amount_slope_ci[2], 3)`]). The accuracy of the best model will be validated against this behavioral characteritic.
+Accuracy (1/`|error|`) improves as attention increases (`viewAmount` decreases) (bootstrapped 95% CI for the median regression slope [`r round(accuracy_view_amount_slope_ci[1], 3)`, `r round(accuracy_view_amount_slope_ci[2], 3)`]). The accuracy of the best model will be validated against this behavioral characteritic.
 
 ### Subjective Measure (make it more descriptive)
 
@@ -613,7 +609,354 @@ conf_error_slope_ci <- boot.ci(conf_error_slope_boot, type = "perc")$percent[4:5
 
 - Subjective confidence reduces with task difficulty (bootstrapped 95% CI for the median regression slope [`r round(conf_target_slope_ci[1], 3)`, `r round(conf_target_slope_ci[2], 3)`]) similar to error which is an objective measure of performance (@fig-conf-by-target-1).
 - But SD of this subjective measure does not grow with task difficulty (@fig-conf-by-target-2).
-- Confidence does not track performance accuracy (1/|`error`|) (bootstrapped 95% CI for the median regression slope [`r round(conf_error_slope_ci[1], 3)`, `r round(conf_error_slope_ci[2], 3)`]).
+- Confidence does not track performance accuracy (1/`|error|`) (bootstrapped 95% CI for the median regression slope [`r round(conf_error_slope_ci[1], 3)`, `r round(conf_error_slope_ci[2], 3)`]).
 
 Thus, participants track their performance based on the task's difficulty and not on how well they actually did. The winning model's internal uncertainity measure will be validated against these behavioral characteristics.  
+
+## Models (descriptive title later)
+
+Main goal was to create a generalizable linear model which can track it's own uncertainity, offering an alternative to the nonlinear path integration and cue combination models defined in the source paper [@Harootonian_2022].
+
+### Unisensory Model
+
+```{r}
+#| label: fig-model-unisensory
+#| fig-cap: "**Unisensory model: Predicted SD of error against target, and residual QQ plot**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: Fit unisensory model
+#| code-fold: true
+#| message: false
+#| fig-width: 5
+#| fig-height: 6
+
+# Define the number of cycles to run for modelling and non-verbose output
+gamlss_control <- gamlss.control(n.cyc = 300, trace = FALSE)
+
+# Define the model
+# Internal representation of the rotation
+unisensory_formula <- error ~ 1 + re(random = ~1|subj, level = 0) # subj as a random intercept
+# SD ie. noise modelled against target
+unisensory_sigma_formula <- ~ target + re(random = ~1|subj, level = 0) # subj as a random intercept
+# Gaussian distribution for error
+unisensory_family <- NO()
+
+# Fit the model
+unisensory <- gamlss(
+  formula = unisensory_formula,
+  sigma.formula = unisensory_sigma_formula,
+  family = unisensory_family,
+  data = train %>% select(-fb_validity),
+  control = gamlss_control
+)
+
+# Predict mu and sigma continuously across target
+unisensory_pred_by_target <- tibble(target = seq(0, 360, length.out = 200), subj = factor("population")) %>%
+  mutate(pred_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
+                            data = train %>% select(-fb_validity)),
+         pred_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
+                               data = train %>% select(-fb_validity)))
+
+# Define the plot for predicted sigma vs. target
+unisensory_plot_sigma <- unisensory_pred_by_target %>%
+  ggplot(aes(x = target, y = pred_sigma)) +
+  geom_line() +
+  theme_classic() +
+  labs(x = "Target Heading", y = expression(paste("Predicted SD of error (", sigma, ")")))
+
+# Define the QQ plot for residuals
+unisensory_plot_qq <- ggplot(tibble(resid = resid(unisensory)), aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_classic() +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+# Check residuals for normality using Kolmogorov-Smirnov test
+unisensory_ks <- ks.test(resid(unisensory), "pnorm", mean(resid(unisensory)), sd(resid(unisensory)))
+
+unisensory_plot_sigma
+unisensory_plot_qq
+
+# Predict mu and sigma on test set subjects
+unisensory_test_pred <- test %>%
+  mutate(pred_mu = predict(unisensory, what = "mu",
+                            newdata = test %>% select(-fb_validity),
+                            type = "response", data = train %>% select(-fb_validity)),
+         pred_sigma = predict(unisensory, what = "sigma",
+                               newdata = test %>% select(-fb_validity),
+                               type = "response", data = train %>% select(-fb_validity)))
+
+# Total negative log-likelihood per test subject
+unisensory_nll_by_subj <- unisensory_test_pred %>%
+  group_by(subj) %>%
+  summarise(nll = -sum(dNO(error, mu = pred_mu, sigma = pred_sigma, log = TRUE)))
+```
+
+This model assumes that all trials were performed using only the proprioceptive information perceived at the end of encoding period and during the retrieval period. Visual feedback has no bearing on the participant's responses. The uncertainity of the predicted value increases with task difficulty (@fig-model-unisensory-1), consistent with the behavioral variables error and target relationship. But the residual quantiles do not align with the theoretical quantiles of a normal distribution especially at the extremes (@fig-model-unisensory-2) (Kolmogorov-Smirnov test, D = `r round(unisensory_ks$statistic, 3)`, `r ifelse(unisensory_ks$p.value < 0.001, "p < 0.001", paste("p =", round(unisensory_ks$p.value, 3)))`). Will just the presence of visual feedback improve this?
+
+### Naive Multisensory Model
+
+```{r}
+#| label: fig-model-naive-multisensory
+#| fig-cap: "**Naive multisensory model: Predicted SD of error against target, and residual QQ plot**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: Fit naive multisensory model
+#| code-fold: true
+#| message: false
+#| fig-width: 5
+#| fig-height: 6
+
+# Define the model
+# Location shifts by presence of visual feedback
+naive_multisensory_formula <- error ~ condition + re(random = ~1|subj, level = 0) # subj as a random intercept
+# SD ie. noise modelled against target and presence of visual feedback
+naive_multisensory_sigma_formula <- ~ target + condition + re(random = ~1|subj, level = 0) # subj as a random intercept
+# Gaussian distribution for error
+naive_multisensory_family <- NO()
+
+# Fit the model
+naive_multisensory <- gamlss(
+  formula = naive_multisensory_formula,
+  sigma.formula = naive_multisensory_sigma_formula,
+  family = naive_multisensory_family,
+  data = train %>% select(-fb_validity),
+  control = gamlss_control
+)
+
+# Predict mu and sigma continuously across target, by condition
+naive_multisensory_pred_by_target <- expand_grid(target = seq(0, 360, length.out = 200),
+                                                  condition = levels(train$condition)) %>%
+  mutate(condition = factor(condition, levels = levels(train$condition)), subj = factor("population")) %>%
+  mutate(pred_mu = predict(naive_multisensory, what = "mu", newdata = ., type = "response",
+                            data = train %>% select(-fb_validity)),
+         pred_sigma = predict(naive_multisensory, what = "sigma", newdata = ., type = "response",
+                               data = train %>% select(-fb_validity)))
+
+# Define the plot for predicted sigma vs. target, by condition
+naive_multisensory_plot_sigma <- naive_multisensory_pred_by_target %>%
+  ggplot(aes(x = target, y = pred_sigma, colour = condition)) +
+  geom_line() +
+  scale_colour_brewer(palette = "Dark2") +
+  theme_classic() +
+  labs(x = "Target Heading", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "Condition")
+
+# Define the QQ plot for residuals
+naive_multisensory_plot_qq <- ggplot(tibble(resid = resid(naive_multisensory)), aes(sample = resid)) +
+  stat_qq() +
+  stat_qq_line() +
+  theme_classic() +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles")
+
+# Check residuals for normality using Kolmogorov-Smirnov test
+naive_multisensory_ks <- ks.test(resid(naive_multisensory), "pnorm", mean(resid(naive_multisensory)), sd(resid(naive_multisensory)))
+
+naive_multisensory_plot_sigma
+naive_multisensory_plot_qq
+
+# Predict mu and sigma on test set subjects
+naive_multisensory_test_pred <- test %>%
+  mutate(pred_mu = predict(naive_multisensory, what = "mu",
+                            newdata = test %>% select(-fb_validity),
+                            type = "response", data = train %>% select(-fb_validity)),
+         pred_sigma = predict(naive_multisensory, what = "sigma",
+                               newdata = test %>% select(-fb_validity),
+                               type = "response", data = train %>% select(-fb_validity)))
+
+# Total negative log-likelihood per test subject
+naive_multisensory_nll_by_subj <- naive_multisensory_test_pred %>%
+  group_by(subj) %>%
+  summarise(nll = -sum(dNO(error, mu = pred_mu, sigma = pred_sigma, log = TRUE)))
+```
+
+This model assumes that all trials were performed using proprioceptive information without discounting the presence of visual feedback. Visual feedback's reliability has no bearing on the participant's responses. The uncertainity of the predicted value increases with task difficulty and with addition of feedback (@fig-model-naive-multisensory-1), consistent with the behavioral variables error and condition relationship. The residual quantiles are closer to the theoretical quantiles of a normal distribution (@fig-model-naive-multisensory-2) (Kolmogorov-Smirnov test, D = `r round(naive_multisensory_ks$statistic, 3)`, `r ifelse(naive_multisensory_ks$p.value < 0.001, "p < 0.001", paste("p =", round(naive_multisensory_ks$p.value, 3)))`). Does adding information about the reliability of visual feedback improve this?
+
+### Multisensory Model
+
+```{r}
+#| label: fig-model-multisensory
+#| fig-cap: "**Multisensory model: Predicted SD of error against target, and against feedback offset magnitude**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: Fit multisensory model
+#| code-fold: true
+#| message: false
+#| fig-width: 5
+#| fig-height: 6
+
+# Define the model
+# Location shifts by magnitude of the visual feedback offset ie reliability
+multisensory_formula <- error ~ abs(fb_offset) + re(random = ~1|subj, level = 0) # subj as a random intercept
+# SD ie. noise modelled against target, offset magnitude, and their interaction
+multisensory_sigma_formula <- ~ target * abs(fb_offset) + re(random = ~1|subj, level = 0) # subj as a random intercept
+# Gaussian distribution for error
+multisensory_family <- NO()
+
+# Fit the model
+multisensory <- gamlss(
+  formula = multisensory_formula,
+  sigma.formula = multisensory_sigma_formula,
+  family = multisensory_family,
+  data = train %>% select(-fb_validity),
+  control = gamlss_control
+)
+
+# Predict mu and sigma continuously across target, by offset magnitude
+multisensory_pred_by_target <- expand_grid(target = seq(0, 360, length.out = 200),
+                                            fb_offset = c(0, 45, 90, 135, 180)) %>%
+  mutate(subj = factor("population")) %>%
+  mutate(pred_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
+                            data = train %>% select(-fb_validity)),
+         pred_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
+                               data = train %>% select(-fb_validity)))
+
+# Define the plot for predicted sigma vs. target, by offset magnitude
+multisensory_plot_sigma_target <- multisensory_pred_by_target %>%
+  ggplot(aes(x = target, y = pred_sigma, colour = factor(fb_offset))) +
+  geom_line() +
+  scale_colour_brewer(palette = "Blues") +
+  theme_classic() +
+  labs(x = "Target Heading", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "|Feedback Offset|")
+
+# Predict mu and sigma continuously across offset magnitude, by target
+multisensory_pred_by_offset <- expand_grid(fb_offset = seq(0, 180, length.out = 200),
+                                            target = c(0, 90, 180, 270, 360)) %>%
+  mutate(subj = factor("population")) %>%
+  mutate(pred_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
+                            data = train %>% select(-fb_validity)),
+         pred_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
+                               data = train %>% select(-fb_validity)))
+
+# Define the plot for predicted sigma vs. offset magnitude, by target
+multisensory_plot_sigma_offset <- multisensory_pred_by_offset %>%
+  ggplot(aes(x = fb_offset, y = pred_sigma, colour = factor(target))) +
+  geom_line() +
+  geom_vline(xintercept = 60, linetype = "dashed") +
+  scale_colour_brewer(palette = "Oranges") +
+  theme_classic() +
+  labs(x = "|Feedback Offset|", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "Target Heading")
+
+# Check residuals for normality using Kolmogorov-Smirnov test
+multisensory_ks <- ks.test(resid(multisensory), "pnorm", mean(resid(multisensory)), sd(resid(multisensory)))
+
+multisensory_plot_sigma_target
+multisensory_plot_sigma_offset
+
+# Predict mu and sigma on test set subjects
+multisensory_test_pred <- test %>%
+  mutate(pred_mu = predict(multisensory, what = "mu",
+                            newdata = test %>% select(-fb_validity),
+                            type = "response", data = train %>% select(-fb_validity)),
+         pred_sigma = predict(multisensory, what = "sigma",
+                               newdata = test %>% select(-fb_validity),
+                               type = "response", data = train %>% select(-fb_validity)))
+
+# Total negative log-likelihood per test subject
+multisensory_nll_by_subj <- multisensory_test_pred %>%
+  group_by(subj) %>%
+  summarise(nll = -sum(dNO(error, mu = pred_mu, sigma = pred_sigma, log = TRUE)))
+```
+
+This model assumes that all trials were performed using proprioceptive information without discounting the reliability of the visual feedback. The uncertainity of the predicted value increases with task difficulty (@fig-model-multisensory-1) and with decreasing reliability of the visual feedback (@fig-model-multisensory-2). The residual quantiles are even closer to the theoretical quantiles of a normal distribution (Kolmogorov-Smirnov test, D = `r round(multisensory_ks$statistic, 3)`, `r ifelse(multisensory_ks$p.value < 0.001, "p < 0.001", paste("p =", round(multisensory_ks$p.value, 3)))`). But, this model fails to capture the plateau seen at 60$^\circ$ with the behavioral variables error and magnitude of offset.
+
+### Hybrid Model
+
+```{r}
+#| label: fig-model-hybrid
+#| fig-cap: "**Hybrid model: Predicted SD of error against target, and against feedback offset magnitude**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: Combine unisensory and multisensory model predictions
+#| code-fold: true
+#| message: false
+#| fig-width: 5
+#| fig-height: 6
+
+# Predict mu and sigma from both fitted models across target, by offset magnitude, and combine
+hybrid_pred_by_target <- expand_grid(target = seq(0, 360, length.out = 200),
+                                      fb_offset = c(0, 45, 90, 135, 180)) %>%
+  mutate(subj = factor("population")) %>%
+  mutate(uni_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
+                           data = train %>% select(-fb_validity)),
+         uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
+                              data = train %>% select(-fb_validity)),
+         multi_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
+                             data = train %>% select(-fb_validity)),
+         multi_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
+                                data = train %>% select(-fb_validity))) %>%
+  # Precision-weighted model averaging
+  mutate(uni_precision = 1 / uni_sigma^2,
+         multi_precision = 1 / multi_sigma^2,
+         pred_sigma = sqrt(1 / (uni_precision + multi_precision)))
+
+# Define the plot for predicted sigma vs. target, by offset magnitude
+hybrid_plot_sigma_target <- hybrid_pred_by_target %>%
+  ggplot(aes(x = target, y = pred_sigma, colour = factor(fb_offset))) +
+  geom_line() +
+  scale_colour_brewer(palette = "Blues") +
+  theme_classic() +
+  labs(x = "Target Heading", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "|Feedback Offset|")
+
+# Predict mu and sigma from both fitted models across offset magnitude, by target, and combine
+hybrid_pred_by_offset <- expand_grid(fb_offset = seq(0, 180, length.out = 200),
+                                      target = c(0, 90, 180, 270, 360)) %>%
+  mutate(subj = factor("population")) %>%
+  mutate(uni_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
+                           data = train %>% select(-fb_validity)),
+         uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
+                              data = train %>% select(-fb_validity)),
+         multi_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
+                             data = train %>% select(-fb_validity)),
+         multi_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
+                                data = train %>% select(-fb_validity))) %>%
+  # Precision-weighted model averaging
+  mutate(uni_precision = 1 / uni_sigma^2,
+         multi_precision = 1 / multi_sigma^2,
+         pred_sigma = sqrt(1 / (uni_precision + multi_precision)))
+
+# Define the plot for predicted sigma vs. offset magnitude, by target
+hybrid_plot_sigma_offset <- hybrid_pred_by_offset %>%
+  ggplot(aes(x = fb_offset, y = pred_sigma, colour = factor(target))) +
+  geom_line() +
+  geom_vline(xintercept = 60, linetype = "dashed") +
+  scale_colour_brewer(palette = "Oranges") +
+  theme_classic() +
+  labs(x = "|Feedback Offset|", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "Target Heading")
+
+hybrid_plot_sigma_target
+hybrid_plot_sigma_offset
+
+# Predict mu and sigma from both fitted models on test
+hybrid_test_pred <- test %>%
+  mutate(uni_mu = predict(unisensory, what = "mu",
+                           newdata = test %>% select(-fb_validity),
+                           type = "response", data = train %>% select(-fb_validity)),
+         uni_sigma = predict(unisensory, what = "sigma",
+                              newdata = test %>% select(-fb_validity),
+                              type = "response", data = train %>% select(-fb_validity)),
+         multi_mu = predict(multisensory, what = "mu",
+                             newdata = test %>% select(-fb_validity),
+                             type = "response", data = train %>% select(-fb_validity)),
+         multi_sigma = predict(multisensory, what = "sigma",
+                                newdata = test %>% select(-fb_validity),
+                                type = "response", data = train %>% select(-fb_validity))) %>%
+  # Precision-weighted model averaging
+  mutate(uni_precision = 1 / uni_sigma^2,
+         multi_precision = 1 / multi_sigma^2,
+         pred_sigma = sqrt(1 / (uni_precision + multi_precision)),
+         pred_mu = (uni_mu * uni_precision + multi_mu * multi_precision) / (uni_precision + multi_precision))
+
+# Total negative log-likelihood per test subject
+hybrid_nll_by_subj <- hybrid_test_pred %>%
+  group_by(subj) %>%
+  summarise(nll = -sum(dNO(error, mu = pred_mu, sigma = pred_sigma, log = TRUE)))
+```
+
+This model combines the unisensory and multisensory models' predictions by weighting them according to their precisions [@Noppeney_2021]. The combined predicted SD of error is lower than either individual model's prediction against target (@fig-model-hybrid-1) and against offset magnitude (@fig-model-hybrid-2). The hybrid model has reduced uncertainity as well:
+
+| | |
+|---|---|
+| Unisensory uncertainity | *`r round(min(unisensory_pred_by_target$pred_sigma))`$^\circ$* to *`r round(max(unisensory_pred_by_target$pred_sigma))`$^\circ$* |
+| Multisensory uncertainity | *`r round(min(multisensory_pred_by_offset$pred_sigma))`$^\circ$* to *`r round(max(multisensory_pred_by_offset$pred_sigma))`$^\circ$* |
+| Hybrid uncertainity | *`r round(min(hybrid_pred_by_offset$pred_sigma))`$^\circ$* to *`r round(max(hybrid_pred_by_offset$pred_sigma))`$^\circ$* |
 

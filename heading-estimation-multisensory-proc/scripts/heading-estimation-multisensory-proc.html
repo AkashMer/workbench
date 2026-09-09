@@ -174,9 +174,10 @@ window.Quarto = {
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(boot)</span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(quantreg)</span>
 <span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(rmcorr)</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a><span class="co"># Pin the here() root explicitly</span></span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>here<span class="sc">::</span><span class="fu">i_am</span>(<span class="st">"scripts/heading-estimation-multisensory-proc.qmd"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(gamlss)</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Pin the here() root explicitly</span></span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>here<span class="sc">::</span><span class="fu">i_am</span>(<span class="st">"scripts/heading-estimation-multisensory-proc.qmd"</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <div class="cell">
@@ -195,11 +196,11 @@ window.Quarto = {
 </div>
 <div class="cell">
 <details class="code-fold">
-<summary>Load, preprocess and split data into train, validation and test splits</summary>
+<summary>Load, preprocess and split data into train and test splits</summary>
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Load data</span></span>
 <span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>dataconf <span class="ot">&lt;-</span> <span class="fu">read_csv</span>(<span class="fu">file.path</span>(data_path, <span class="st">"dataconf.csv"</span>))</span>
 <span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Prepare the data for train, validation and test splits</span></span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Prepare the data for train and test splits</span></span>
 <span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a>data <span class="ot">&lt;-</span> dataconf <span class="sc">%&gt;%</span></span>
 <span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Convert the subject column into a factor</span></span>
 <span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">subj =</span> <span class="fu">factor</span>(<span class="fu">as.integer</span>(<span class="fu">str_remove</span>(subj, <span class="st">"^s"</span>)))) <span class="sc">%&gt;%</span></span>
@@ -214,16 +215,11 @@ window.Quarto = {
 <span id="cb3-16"><a href="#cb3-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">trial_type =</span> <span class="fu">if_else</span>(condition <span class="sc">==</span> <span class="st">"noFB"</span>, <span class="st">"noFB"</span>, <span class="fu">as.character</span>(fb_validity))) <span class="sc">%&gt;%</span></span>
 <span id="cb3-17"><a href="#cb3-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">trial_type =</span> <span class="fu">factor</span>(trial_type, <span class="at">levels =</span> <span class="fu">c</span>(<span class="st">"noFB"</span>, <span class="st">"reliable"</span>, <span class="st">"unreliable"</span>)))</span>
 <span id="cb3-18"><a href="#cb3-18" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Split into train (70%), validation (15%) and test (15%) by whole subjects</span></span>
+<span id="cb3-19"><a href="#cb3-19" aria-hidden="true" tabindex="-1"></a><span class="co"># Split into train (80%) and test (20%) by whole subjects</span></span>
 <span id="cb3-20"><a href="#cb3-20" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">246</span>) <span class="co"># For reproducibility</span></span>
-<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>data_split <span class="ot">&lt;-</span> <span class="fu">group_initial_split</span>(data, <span class="at">group =</span> subj, <span class="at">prop =</span> <span class="fl">0.7</span>)</span>
+<span id="cb3-21"><a href="#cb3-21" aria-hidden="true" tabindex="-1"></a>data_split <span class="ot">&lt;-</span> <span class="fu">group_initial_split</span>(data, <span class="at">group =</span> subj, <span class="at">prop =</span> <span class="fl">0.8</span>)</span>
 <span id="cb3-22"><a href="#cb3-22" aria-hidden="true" tabindex="-1"></a>train <span class="ot">&lt;-</span> <span class="fu">training</span>(data_split)</span>
-<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>remainder <span class="ot">&lt;-</span> <span class="fu">testing</span>(data_split)</span>
-<span id="cb3-24"><a href="#cb3-24" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb3-25"><a href="#cb3-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Split the remainder evenly into validation and test by whole subjects</span></span>
-<span id="cb3-26"><a href="#cb3-26" aria-hidden="true" tabindex="-1"></a>remainder_split <span class="ot">&lt;-</span> <span class="fu">group_initial_split</span>(remainder, <span class="at">group =</span> subj, <span class="at">prop =</span> <span class="fl">0.5</span>)</span>
-<span id="cb3-27"><a href="#cb3-27" aria-hidden="true" tabindex="-1"></a>validation <span class="ot">&lt;-</span> <span class="fu">training</span>(remainder_split)</span>
-<span id="cb3-28"><a href="#cb3-28" aria-hidden="true" tabindex="-1"></a>test <span class="ot">&lt;-</span> <span class="fu">testing</span>(remainder_split)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb3-23"><a href="#cb3-23" aria-hidden="true" tabindex="-1"></a>test <span class="ot">&lt;-</span> <span class="fu">testing</span>(data_split)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 <p><code>dataconf.csv</code> contains the following columns:</p>
@@ -769,7 +765,7 @@ Figure&nbsp;4: <strong>SD of error across target heading bins, condition, and vi
 <li>The amount of uncertainity rises with unreliability of the visual feedback but then plateaus around 60<span class="math inline">\(^\circ\)</span> (<a href="#fig-error-variance-3" class="quarto-xref">Figure&nbsp;4 (c)</a>). The internal model might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information.</li>
 </ul>
 <p>From the above characteristics of the participants’ responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>, but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources.</p>
-<p>Accuracy (1/|<code>error</code>|) improves as attention increases (<code>viewAmount</code> decreases) (bootstrapped 95% CI for the median regression slope [0.27, 0.772]). The accuracy of the best model will be validated against this behavioral characteritic.</p>
+<p>Accuracy (1/<code>|error|</code>) improves as attention increases (<code>viewAmount</code> decreases) (bootstrapped 95% CI for the median regression slope [0.27, 0.772]). The accuracy of the best model will be validated against this behavioral characteritic.</p>
 </section>
 <section id="subjective-measure-make-it-more-descriptive" class="level3">
 <h3 class="anchored" data-anchor-id="subjective-measure-make-it-more-descriptive">Subjective Measure (make it more descriptive)</h3>
@@ -877,9 +873,466 @@ Figure&nbsp;5: <strong>Median and SD of subjective confidence across target head
 <ul>
 <li>Subjective confidence reduces with task difficulty (bootstrapped 95% CI for the median regression slope [0.013, 0.038]) similar to error which is an objective measure of performance (<a href="#fig-conf-by-target-1" class="quarto-xref">Figure&nbsp;5 (a)</a>).</li>
 <li>But SD of this subjective measure does not grow with task difficulty (<a href="#fig-conf-by-target-2" class="quarto-xref">Figure&nbsp;5 (b)</a>).</li>
-<li>Confidence does not track performance accuracy (1/|<code>error</code>|) (bootstrapped 95% CI for the median regression slope [-0.014, 0.13]).</li>
+<li>Confidence does not track performance accuracy (1/<code>|error|</code>) (bootstrapped 95% CI for the median regression slope [-0.014, 0.13]).</li>
 </ul>
 <p>Thus, participants track their performance based on the task’s difficulty and not on how well they actually did. The winning model’s internal uncertainity measure will be validated against these behavioral characteristics.</p>
+</section>
+</section>
+<section id="models-descriptive-title-later" class="level2">
+<h2 class="anchored" data-anchor-id="models-descriptive-title-later">Models (descriptive title later)</h2>
+<p>Main goal was to create a generalizable linear model which can track it’s own uncertainity, offering an alternative to the nonlinear path integration and cue combination models defined in the source paper <span class="citation" data-cites="Harootonian_2022">[@Harootonian_2022]</span>.</p>
+<section id="unisensory-model" class="level3">
+<h3 class="anchored" data-anchor-id="unisensory-model">Unisensory Model</h3>
+<details class="code-fold">
+<summary>Fit unisensory model</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the number of cycles to run for modelling and non-verbose output</span></span>
+<span id="cb9-2"><a href="#cb9-2" aria-hidden="true" tabindex="-1"></a>gamlss_control <span class="ot">&lt;-</span> <span class="fu">gamlss.control</span>(<span class="at">n.cyc =</span> <span class="dv">300</span>, <span class="at">trace =</span> <span class="cn">FALSE</span>)</span>
+<span id="cb9-3"><a href="#cb9-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-4"><a href="#cb9-4" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the model</span></span>
+<span id="cb9-5"><a href="#cb9-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Internal representation of the rotation</span></span>
+<span id="cb9-6"><a href="#cb9-6" aria-hidden="true" tabindex="-1"></a>unisensory_formula <span class="ot">&lt;-</span> error <span class="sc">~</span> <span class="dv">1</span> <span class="sc">+</span> <span class="fu">re</span>(<span class="at">random =</span> <span class="sc">~</span><span class="dv">1</span><span class="sc">|</span>subj, <span class="at">level =</span> <span class="dv">0</span>) <span class="co"># subj as a random intercept</span></span>
+<span id="cb9-7"><a href="#cb9-7" aria-hidden="true" tabindex="-1"></a><span class="co"># SD ie. noise modelled against target</span></span>
+<span id="cb9-8"><a href="#cb9-8" aria-hidden="true" tabindex="-1"></a>unisensory_sigma_formula <span class="ot">&lt;-</span> <span class="er">~</span> target <span class="sc">+</span> <span class="fu">re</span>(<span class="at">random =</span> <span class="sc">~</span><span class="dv">1</span><span class="sc">|</span>subj, <span class="at">level =</span> <span class="dv">0</span>) <span class="co"># subj as a random intercept</span></span>
+<span id="cb9-9"><a href="#cb9-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Gaussian distribution for error</span></span>
+<span id="cb9-10"><a href="#cb9-10" aria-hidden="true" tabindex="-1"></a>unisensory_family <span class="ot">&lt;-</span> <span class="fu">NO</span>()</span>
+<span id="cb9-11"><a href="#cb9-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-12"><a href="#cb9-12" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit the model</span></span>
+<span id="cb9-13"><a href="#cb9-13" aria-hidden="true" tabindex="-1"></a>unisensory <span class="ot">&lt;-</span> <span class="fu">gamlss</span>(</span>
+<span id="cb9-14"><a href="#cb9-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">formula =</span> unisensory_formula,</span>
+<span id="cb9-15"><a href="#cb9-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">sigma.formula =</span> unisensory_sigma_formula,</span>
+<span id="cb9-16"><a href="#cb9-16" aria-hidden="true" tabindex="-1"></a>  <span class="at">family =</span> unisensory_family,</span>
+<span id="cb9-17"><a href="#cb9-17" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb9-18"><a href="#cb9-18" aria-hidden="true" tabindex="-1"></a>  <span class="at">control =</span> gamlss_control</span>
+<span id="cb9-19"><a href="#cb9-19" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb9-20"><a href="#cb9-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-21"><a href="#cb9-21" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma continuously across target</span></span>
+<span id="cb9-22"><a href="#cb9-22" aria-hidden="true" tabindex="-1"></a>unisensory_pred_by_target <span class="ot">&lt;-</span> <span class="fu">tibble</span>(<span class="at">target =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">360</span>, <span class="at">length.out =</span> <span class="dv">200</span>), <span class="at">subj =</span> <span class="fu">factor</span>(<span class="st">"population"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb9-23"><a href="#cb9-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb9-24"><a href="#cb9-24" aria-hidden="true" tabindex="-1"></a>                            <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb9-25"><a href="#cb9-25" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb9-26"><a href="#cb9-26" aria-hidden="true" tabindex="-1"></a>                               <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb9-27"><a href="#cb9-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-28"><a href="#cb9-28" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for predicted sigma vs. target</span></span>
+<span id="cb9-29"><a href="#cb9-29" aria-hidden="true" tabindex="-1"></a>unisensory_plot_sigma <span class="ot">&lt;-</span> unisensory_pred_by_target <span class="sc">%&gt;%</span></span>
+<span id="cb9-30"><a href="#cb9-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> target, <span class="at">y =</span> pred_sigma)) <span class="sc">+</span></span>
+<span id="cb9-31"><a href="#cb9-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb9-32"><a href="#cb9-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb9-33"><a href="#cb9-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"Predicted SD of error ("</span>, sigma, <span class="st">")"</span>)))</span>
+<span id="cb9-34"><a href="#cb9-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-35"><a href="#cb9-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the QQ plot for residuals</span></span>
+<span id="cb9-36"><a href="#cb9-36" aria-hidden="true" tabindex="-1"></a>unisensory_plot_qq <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(<span class="fu">tibble</span>(<span class="at">resid =</span> <span class="fu">resid</span>(unisensory)), <span class="fu">aes</span>(<span class="at">sample =</span> resid)) <span class="sc">+</span></span>
+<span id="cb9-37"><a href="#cb9-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_qq</span>() <span class="sc">+</span></span>
+<span id="cb9-38"><a href="#cb9-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_qq_line</span>() <span class="sc">+</span></span>
+<span id="cb9-39"><a href="#cb9-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb9-40"><a href="#cb9-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Theoretical Quantiles"</span>, <span class="at">y =</span> <span class="st">"Sample Quantiles"</span>)</span>
+<span id="cb9-41"><a href="#cb9-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-42"><a href="#cb9-42" aria-hidden="true" tabindex="-1"></a><span class="co"># Check residuals for normality using Kolmogorov-Smirnov test</span></span>
+<span id="cb9-43"><a href="#cb9-43" aria-hidden="true" tabindex="-1"></a>unisensory_ks <span class="ot">&lt;-</span> <span class="fu">ks.test</span>(<span class="fu">resid</span>(unisensory), <span class="st">"pnorm"</span>, <span class="fu">mean</span>(<span class="fu">resid</span>(unisensory)), <span class="fu">sd</span>(<span class="fu">resid</span>(unisensory)))</span>
+<span id="cb9-44"><a href="#cb9-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-45"><a href="#cb9-45" aria-hidden="true" tabindex="-1"></a>unisensory_plot_sigma</span>
+<span id="cb9-46"><a href="#cb9-46" aria-hidden="true" tabindex="-1"></a>unisensory_plot_qq</span>
+<span id="cb9-47"><a href="#cb9-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-48"><a href="#cb9-48" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma on test set subjects</span></span>
+<span id="cb9-49"><a href="#cb9-49" aria-hidden="true" tabindex="-1"></a>unisensory_test_pred <span class="ot">&lt;-</span> test <span class="sc">%&gt;%</span></span>
+<span id="cb9-50"><a href="#cb9-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"mu"</span>,</span>
+<span id="cb9-51"><a href="#cb9-51" aria-hidden="true" tabindex="-1"></a>                            <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb9-52"><a href="#cb9-52" aria-hidden="true" tabindex="-1"></a>                            <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb9-53"><a href="#cb9-53" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"sigma"</span>,</span>
+<span id="cb9-54"><a href="#cb9-54" aria-hidden="true" tabindex="-1"></a>                               <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb9-55"><a href="#cb9-55" aria-hidden="true" tabindex="-1"></a>                               <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb9-56"><a href="#cb9-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb9-57"><a href="#cb9-57" aria-hidden="true" tabindex="-1"></a><span class="co"># Total negative log-likelihood per test subject</span></span>
+<span id="cb9-58"><a href="#cb9-58" aria-hidden="true" tabindex="-1"></a>unisensory_nll_by_subj <span class="ot">&lt;-</span> unisensory_test_pred <span class="sc">%&gt;%</span></span>
+<span id="cb9-59"><a href="#cb9-59" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
+<span id="cb9-60"><a href="#cb9-60" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">nll =</span> <span class="sc">-</span><span class="fu">sum</span>(<span class="fu">dNO</span>(error, <span class="at">mu =</span> pred_mu, <span class="at">sigma =</span> pred_sigma, <span class="at">log =</span> <span class="cn">TRUE</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="fig-model-unisensory" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-model-unisensory-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-unisensory" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-unisensory-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-unisensory-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-unisensory-1.png" id="fig-model-unisensory-1" class="img-fluid figure-img" data-ref-parent="fig-model-unisensory" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-unisensory-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-unisensory" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-unisensory-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-unisensory-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-unisensory-2.png" id="fig-model-unisensory-2" class="img-fluid figure-img" data-ref-parent="fig-model-unisensory" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-unisensory-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-model-unisensory-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6: <strong>Unisensory model: Predicted SD of error against target, and residual QQ plot</strong>
+</figcaption>
+</figure>
+</div>
+<p>This model assumes that all trials were performed using only the proprioceptive information perceived at the end of encoding period and during the retrieval period. Visual feedback has no bearing on the participant’s responses. The uncertainity of the predicted value increases with task difficulty (<a href="#fig-model-unisensory-1" class="quarto-xref">Figure&nbsp;6 (a)</a>), consistent with the behavioral variables error and target relationship. But the residual quantiles do not align with the theoretical quantiles of a normal distribution especially at the extremes (<a href="#fig-model-unisensory-2" class="quarto-xref">Figure&nbsp;6 (b)</a>) (Kolmogorov-Smirnov test, D = 0.025, p &lt; 0.001). Will just the presence of visual feedback improve this?</p>
+</section>
+<section id="naive-multisensory-model" class="level3">
+<h3 class="anchored" data-anchor-id="naive-multisensory-model">Naive Multisensory Model</h3>
+<details class="code-fold">
+<summary>Fit naive multisensory model</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the model</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Location shifts by presence of visual feedback</span></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a>naive_multisensory_formula <span class="ot">&lt;-</span> error <span class="sc">~</span> condition <span class="sc">+</span> <span class="fu">re</span>(<span class="at">random =</span> <span class="sc">~</span><span class="dv">1</span><span class="sc">|</span>subj, <span class="at">level =</span> <span class="dv">0</span>) <span class="co"># subj as a random intercept</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co"># SD ie. noise modelled against target and presence of visual feedback</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a>naive_multisensory_sigma_formula <span class="ot">&lt;-</span> <span class="er">~</span> target <span class="sc">+</span> condition <span class="sc">+</span> <span class="fu">re</span>(<span class="at">random =</span> <span class="sc">~</span><span class="dv">1</span><span class="sc">|</span>subj, <span class="at">level =</span> <span class="dv">0</span>) <span class="co"># subj as a random intercept</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Gaussian distribution for error</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a>naive_multisensory_family <span class="ot">&lt;-</span> <span class="fu">NO</span>()</span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit the model</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a>naive_multisensory <span class="ot">&lt;-</span> <span class="fu">gamlss</span>(</span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">formula =</span> naive_multisensory_formula,</span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">sigma.formula =</span> naive_multisensory_sigma_formula,</span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">family =</span> naive_multisensory_family,</span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">control =</span> gamlss_control</span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma continuously across target, by condition</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a>naive_multisensory_pred_by_target <span class="ot">&lt;-</span> <span class="fu">expand_grid</span>(<span class="at">target =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">360</span>, <span class="at">length.out =</span> <span class="dv">200</span>),</span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a>                                                  <span class="at">condition =</span> <span class="fu">levels</span>(train<span class="sc">$</span>condition)) <span class="sc">%&gt;%</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">condition =</span> <span class="fu">factor</span>(condition, <span class="at">levels =</span> <span class="fu">levels</span>(train<span class="sc">$</span>condition)), <span class="at">subj =</span> <span class="fu">factor</span>(<span class="st">"population"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(naive_multisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a>                            <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(naive_multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a>                               <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for predicted sigma vs. target, by condition</span></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a>naive_multisensory_plot_sigma <span class="ot">&lt;-</span> naive_multisensory_pred_by_target <span class="sc">%&gt;%</span></span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> target, <span class="at">y =</span> pred_sigma, <span class="at">colour =</span> condition)) <span class="sc">+</span></span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_brewer</span>(<span class="at">palette =</span> <span class="st">"Dark2"</span>) <span class="sc">+</span></span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"Predicted SD of error ("</span>, sigma, <span class="st">")"</span>)), <span class="at">colour =</span> <span class="st">"Condition"</span>)</span>
+<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the QQ plot for residuals</span></span>
+<span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a>naive_multisensory_plot_qq <span class="ot">&lt;-</span> <span class="fu">ggplot</span>(<span class="fu">tibble</span>(<span class="at">resid =</span> <span class="fu">resid</span>(naive_multisensory)), <span class="fu">aes</span>(<span class="at">sample =</span> resid)) <span class="sc">+</span></span>
+<span id="cb10-37"><a href="#cb10-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_qq</span>() <span class="sc">+</span></span>
+<span id="cb10-38"><a href="#cb10-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stat_qq_line</span>() <span class="sc">+</span></span>
+<span id="cb10-39"><a href="#cb10-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb10-40"><a href="#cb10-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Theoretical Quantiles"</span>, <span class="at">y =</span> <span class="st">"Sample Quantiles"</span>)</span>
+<span id="cb10-41"><a href="#cb10-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-42"><a href="#cb10-42" aria-hidden="true" tabindex="-1"></a><span class="co"># Check residuals for normality using Kolmogorov-Smirnov test</span></span>
+<span id="cb10-43"><a href="#cb10-43" aria-hidden="true" tabindex="-1"></a>naive_multisensory_ks <span class="ot">&lt;-</span> <span class="fu">ks.test</span>(<span class="fu">resid</span>(naive_multisensory), <span class="st">"pnorm"</span>, <span class="fu">mean</span>(<span class="fu">resid</span>(naive_multisensory)), <span class="fu">sd</span>(<span class="fu">resid</span>(naive_multisensory)))</span>
+<span id="cb10-44"><a href="#cb10-44" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-45"><a href="#cb10-45" aria-hidden="true" tabindex="-1"></a>naive_multisensory_plot_sigma</span>
+<span id="cb10-46"><a href="#cb10-46" aria-hidden="true" tabindex="-1"></a>naive_multisensory_plot_qq</span>
+<span id="cb10-47"><a href="#cb10-47" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-48"><a href="#cb10-48" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma on test set subjects</span></span>
+<span id="cb10-49"><a href="#cb10-49" aria-hidden="true" tabindex="-1"></a>naive_multisensory_test_pred <span class="ot">&lt;-</span> test <span class="sc">%&gt;%</span></span>
+<span id="cb10-50"><a href="#cb10-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(naive_multisensory, <span class="at">what =</span> <span class="st">"mu"</span>,</span>
+<span id="cb10-51"><a href="#cb10-51" aria-hidden="true" tabindex="-1"></a>                            <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb10-52"><a href="#cb10-52" aria-hidden="true" tabindex="-1"></a>                            <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb10-53"><a href="#cb10-53" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(naive_multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>,</span>
+<span id="cb10-54"><a href="#cb10-54" aria-hidden="true" tabindex="-1"></a>                               <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb10-55"><a href="#cb10-55" aria-hidden="true" tabindex="-1"></a>                               <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb10-56"><a href="#cb10-56" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-57"><a href="#cb10-57" aria-hidden="true" tabindex="-1"></a><span class="co"># Total negative log-likelihood per test subject</span></span>
+<span id="cb10-58"><a href="#cb10-58" aria-hidden="true" tabindex="-1"></a>naive_multisensory_nll_by_subj <span class="ot">&lt;-</span> naive_multisensory_test_pred <span class="sc">%&gt;%</span></span>
+<span id="cb10-59"><a href="#cb10-59" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
+<span id="cb10-60"><a href="#cb10-60" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">nll =</span> <span class="sc">-</span><span class="fu">sum</span>(<span class="fu">dNO</span>(error, <span class="at">mu =</span> pred_mu, <span class="at">sigma =</span> pred_sigma, <span class="at">log =</span> <span class="cn">TRUE</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="fig-model-naive-multisensory" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-model-naive-multisensory-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-naive-multisensory" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-naive-multisensory-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-naive-multisensory-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-naive-multisensory-1.png" id="fig-model-naive-multisensory-1" class="img-fluid figure-img" data-ref-parent="fig-model-naive-multisensory" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-naive-multisensory-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-naive-multisensory" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-naive-multisensory-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-naive-multisensory-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-naive-multisensory-2.png" id="fig-model-naive-multisensory-2" class="img-fluid figure-img" data-ref-parent="fig-model-naive-multisensory" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-naive-multisensory-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-model-naive-multisensory-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7: <strong>Naive multisensory model: Predicted SD of error against target, and residual QQ plot</strong>
+</figcaption>
+</figure>
+</div>
+<p>This model assumes that all trials were performed using proprioceptive information without discounting the presence of visual feedback. Visual feedback’s reliability has no bearing on the participant’s responses. The uncertainity of the predicted value increases with task difficulty and with addition of feedback (<a href="#fig-model-naive-multisensory-1" class="quarto-xref">Figure&nbsp;7 (a)</a>), consistent with the behavioral variables error and condition relationship. The residual quantiles are closer to the theoretical quantiles of a normal distribution (<a href="#fig-model-naive-multisensory-2" class="quarto-xref">Figure&nbsp;7 (b)</a>) (Kolmogorov-Smirnov test, D = 0.018, p = 0.007). Does adding information about the reliability of visual feedback improve this?</p>
+</section>
+<section id="multisensory-model" class="level3">
+<h3 class="anchored" data-anchor-id="multisensory-model">Multisensory Model</h3>
+<details class="code-fold">
+<summary>Fit multisensory model</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the model</span></span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Location shifts by magnitude of the visual feedback offset ie reliability</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a>multisensory_formula <span class="ot">&lt;-</span> error <span class="sc">~</span> <span class="fu">abs</span>(fb_offset) <span class="sc">+</span> <span class="fu">re</span>(<span class="at">random =</span> <span class="sc">~</span><span class="dv">1</span><span class="sc">|</span>subj, <span class="at">level =</span> <span class="dv">0</span>) <span class="co"># subj as a random intercept</span></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="co"># SD ie. noise modelled against target, offset magnitude, and their interaction</span></span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>multisensory_sigma_formula <span class="ot">&lt;-</span> <span class="er">~</span> target <span class="sc">*</span> <span class="fu">abs</span>(fb_offset) <span class="sc">+</span> <span class="fu">re</span>(<span class="at">random =</span> <span class="sc">~</span><span class="dv">1</span><span class="sc">|</span>subj, <span class="at">level =</span> <span class="dv">0</span>) <span class="co"># subj as a random intercept</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Gaussian distribution for error</span></span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a>multisensory_family <span class="ot">&lt;-</span> <span class="fu">NO</span>()</span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a><span class="co"># Fit the model</span></span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>multisensory <span class="ot">&lt;-</span> <span class="fu">gamlss</span>(</span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">formula =</span> multisensory_formula,</span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a>  <span class="at">sigma.formula =</span> multisensory_sigma_formula,</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>  <span class="at">family =</span> multisensory_family,</span>
+<span id="cb11-14"><a href="#cb11-14" aria-hidden="true" tabindex="-1"></a>  <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb11-15"><a href="#cb11-15" aria-hidden="true" tabindex="-1"></a>  <span class="at">control =</span> gamlss_control</span>
+<span id="cb11-16"><a href="#cb11-16" aria-hidden="true" tabindex="-1"></a>)</span>
+<span id="cb11-17"><a href="#cb11-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-18"><a href="#cb11-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma continuously across target, by offset magnitude</span></span>
+<span id="cb11-19"><a href="#cb11-19" aria-hidden="true" tabindex="-1"></a>multisensory_pred_by_target <span class="ot">&lt;-</span> <span class="fu">expand_grid</span>(<span class="at">target =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">360</span>, <span class="at">length.out =</span> <span class="dv">200</span>),</span>
+<span id="cb11-20"><a href="#cb11-20" aria-hidden="true" tabindex="-1"></a>                                            <span class="at">fb_offset =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">45</span>, <span class="dv">90</span>, <span class="dv">135</span>, <span class="dv">180</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb11-21"><a href="#cb11-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">subj =</span> <span class="fu">factor</span>(<span class="st">"population"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb11-22"><a href="#cb11-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb11-23"><a href="#cb11-23" aria-hidden="true" tabindex="-1"></a>                            <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb11-24"><a href="#cb11-24" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb11-25"><a href="#cb11-25" aria-hidden="true" tabindex="-1"></a>                               <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb11-26"><a href="#cb11-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-27"><a href="#cb11-27" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for predicted sigma vs. target, by offset magnitude</span></span>
+<span id="cb11-28"><a href="#cb11-28" aria-hidden="true" tabindex="-1"></a>multisensory_plot_sigma_target <span class="ot">&lt;-</span> multisensory_pred_by_target <span class="sc">%&gt;%</span></span>
+<span id="cb11-29"><a href="#cb11-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> target, <span class="at">y =</span> pred_sigma, <span class="at">colour =</span> <span class="fu">factor</span>(fb_offset))) <span class="sc">+</span></span>
+<span id="cb11-30"><a href="#cb11-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb11-31"><a href="#cb11-31" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_brewer</span>(<span class="at">palette =</span> <span class="st">"Blues"</span>) <span class="sc">+</span></span>
+<span id="cb11-32"><a href="#cb11-32" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb11-33"><a href="#cb11-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"Predicted SD of error ("</span>, sigma, <span class="st">")"</span>)), <span class="at">colour =</span> <span class="st">"|Feedback Offset|"</span>)</span>
+<span id="cb11-34"><a href="#cb11-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-35"><a href="#cb11-35" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma continuously across offset magnitude, by target</span></span>
+<span id="cb11-36"><a href="#cb11-36" aria-hidden="true" tabindex="-1"></a>multisensory_pred_by_offset <span class="ot">&lt;-</span> <span class="fu">expand_grid</span>(<span class="at">fb_offset =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">180</span>, <span class="at">length.out =</span> <span class="dv">200</span>),</span>
+<span id="cb11-37"><a href="#cb11-37" aria-hidden="true" tabindex="-1"></a>                                            <span class="at">target =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">90</span>, <span class="dv">180</span>, <span class="dv">270</span>, <span class="dv">360</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb11-38"><a href="#cb11-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">subj =</span> <span class="fu">factor</span>(<span class="st">"population"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb11-39"><a href="#cb11-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb11-40"><a href="#cb11-40" aria-hidden="true" tabindex="-1"></a>                            <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb11-41"><a href="#cb11-41" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb11-42"><a href="#cb11-42" aria-hidden="true" tabindex="-1"></a>                               <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb11-43"><a href="#cb11-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-44"><a href="#cb11-44" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for predicted sigma vs. offset magnitude, by target</span></span>
+<span id="cb11-45"><a href="#cb11-45" aria-hidden="true" tabindex="-1"></a>multisensory_plot_sigma_offset <span class="ot">&lt;-</span> multisensory_pred_by_offset <span class="sc">%&gt;%</span></span>
+<span id="cb11-46"><a href="#cb11-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> fb_offset, <span class="at">y =</span> pred_sigma, <span class="at">colour =</span> <span class="fu">factor</span>(target))) <span class="sc">+</span></span>
+<span id="cb11-47"><a href="#cb11-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb11-48"><a href="#cb11-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="dv">60</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb11-49"><a href="#cb11-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_brewer</span>(<span class="at">palette =</span> <span class="st">"Oranges"</span>) <span class="sc">+</span></span>
+<span id="cb11-50"><a href="#cb11-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb11-51"><a href="#cb11-51" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"|Feedback Offset|"</span>, <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"Predicted SD of error ("</span>, sigma, <span class="st">")"</span>)), <span class="at">colour =</span> <span class="st">"Target Heading"</span>)</span>
+<span id="cb11-52"><a href="#cb11-52" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-53"><a href="#cb11-53" aria-hidden="true" tabindex="-1"></a><span class="co"># Check residuals for normality using Kolmogorov-Smirnov test</span></span>
+<span id="cb11-54"><a href="#cb11-54" aria-hidden="true" tabindex="-1"></a>multisensory_ks <span class="ot">&lt;-</span> <span class="fu">ks.test</span>(<span class="fu">resid</span>(multisensory), <span class="st">"pnorm"</span>, <span class="fu">mean</span>(<span class="fu">resid</span>(multisensory)), <span class="fu">sd</span>(<span class="fu">resid</span>(multisensory)))</span>
+<span id="cb11-55"><a href="#cb11-55" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-56"><a href="#cb11-56" aria-hidden="true" tabindex="-1"></a>multisensory_plot_sigma_target</span>
+<span id="cb11-57"><a href="#cb11-57" aria-hidden="true" tabindex="-1"></a>multisensory_plot_sigma_offset</span>
+<span id="cb11-58"><a href="#cb11-58" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-59"><a href="#cb11-59" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma on test set subjects</span></span>
+<span id="cb11-60"><a href="#cb11-60" aria-hidden="true" tabindex="-1"></a>multisensory_test_pred <span class="ot">&lt;-</span> test <span class="sc">%&gt;%</span></span>
+<span id="cb11-61"><a href="#cb11-61" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">pred_mu =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"mu"</span>,</span>
+<span id="cb11-62"><a href="#cb11-62" aria-hidden="true" tabindex="-1"></a>                            <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb11-63"><a href="#cb11-63" aria-hidden="true" tabindex="-1"></a>                            <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb11-64"><a href="#cb11-64" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>,</span>
+<span id="cb11-65"><a href="#cb11-65" aria-hidden="true" tabindex="-1"></a>                               <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb11-66"><a href="#cb11-66" aria-hidden="true" tabindex="-1"></a>                               <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)))</span>
+<span id="cb11-67"><a href="#cb11-67" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-68"><a href="#cb11-68" aria-hidden="true" tabindex="-1"></a><span class="co"># Total negative log-likelihood per test subject</span></span>
+<span id="cb11-69"><a href="#cb11-69" aria-hidden="true" tabindex="-1"></a>multisensory_nll_by_subj <span class="ot">&lt;-</span> multisensory_test_pred <span class="sc">%&gt;%</span></span>
+<span id="cb11-70"><a href="#cb11-70" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
+<span id="cb11-71"><a href="#cb11-71" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">nll =</span> <span class="sc">-</span><span class="fu">sum</span>(<span class="fu">dNO</span>(error, <span class="at">mu =</span> pred_mu, <span class="at">sigma =</span> pred_sigma, <span class="at">log =</span> <span class="cn">TRUE</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="fig-model-multisensory" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-model-multisensory-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-multisensory" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-multisensory-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-multisensory-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-multisensory-1.png" id="fig-model-multisensory-1" class="img-fluid figure-img" data-ref-parent="fig-model-multisensory" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-multisensory-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-multisensory" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-multisensory-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-multisensory-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-multisensory-2.png" id="fig-model-multisensory-2" class="img-fluid figure-img" data-ref-parent="fig-model-multisensory" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-multisensory-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-model-multisensory-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;8: <strong>Multisensory model: Predicted SD of error against target, and against feedback offset magnitude</strong>
+</figcaption>
+</figure>
+</div>
+<p>This model assumes that all trials were performed using proprioceptive information without discounting the reliability of the visual feedback. The uncertainity of the predicted value increases with task difficulty (<a href="#fig-model-multisensory-1" class="quarto-xref">Figure&nbsp;8 (a)</a>) and with decreasing reliability of the visual feedback (<a href="#fig-model-multisensory-2" class="quarto-xref">Figure&nbsp;8 (b)</a>). The residual quantiles are even closer to the theoretical quantiles of a normal distribution (Kolmogorov-Smirnov test, D = 0.015, p = 0.037). But, this model fails to capture the plateau seen at 60<span class="math inline">\(^\circ\)</span> with the behavioral variables error and magnitude of offset.</p>
+</section>
+<section id="hybrid-model" class="level3">
+<h3 class="anchored" data-anchor-id="hybrid-model">Hybrid Model</h3>
+<details class="code-fold">
+<summary>Combine unisensory and multisensory model predictions</summary>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma from both fitted models across target, by offset magnitude, and combine</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a>hybrid_pred_by_target <span class="ot">&lt;-</span> <span class="fu">expand_grid</span>(<span class="at">target =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">360</span>, <span class="at">length.out =</span> <span class="dv">200</span>),</span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">fb_offset =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">45</span>, <span class="dv">90</span>, <span class="dv">135</span>, <span class="dv">180</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">subj =</span> <span class="fu">factor</span>(<span class="st">"population"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">uni_mu =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-6"><a href="#cb12-6" aria-hidden="true" tabindex="-1"></a>                           <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-7"><a href="#cb12-7" aria-hidden="true" tabindex="-1"></a>         <span class="at">uni_sigma =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-8"><a href="#cb12-8" aria-hidden="true" tabindex="-1"></a>                              <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-9"><a href="#cb12-9" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_mu =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-10"><a href="#cb12-10" aria-hidden="true" tabindex="-1"></a>                             <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-11"><a href="#cb12-11" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_sigma =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-12"><a href="#cb12-12" aria-hidden="true" tabindex="-1"></a>                                <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity))) <span class="sc">%&gt;%</span></span>
+<span id="cb12-13"><a href="#cb12-13" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Precision-weighted model averaging</span></span>
+<span id="cb12-14"><a href="#cb12-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">uni_precision =</span> <span class="dv">1</span> <span class="sc">/</span> uni_sigma<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb12-15"><a href="#cb12-15" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_precision =</span> <span class="dv">1</span> <span class="sc">/</span> multi_sigma<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb12-16"><a href="#cb12-16" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">sqrt</span>(<span class="dv">1</span> <span class="sc">/</span> (uni_precision <span class="sc">+</span> multi_precision)))</span>
+<span id="cb12-17"><a href="#cb12-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-18"><a href="#cb12-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for predicted sigma vs. target, by offset magnitude</span></span>
+<span id="cb12-19"><a href="#cb12-19" aria-hidden="true" tabindex="-1"></a>hybrid_plot_sigma_target <span class="ot">&lt;-</span> hybrid_pred_by_target <span class="sc">%&gt;%</span></span>
+<span id="cb12-20"><a href="#cb12-20" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> target, <span class="at">y =</span> pred_sigma, <span class="at">colour =</span> <span class="fu">factor</span>(fb_offset))) <span class="sc">+</span></span>
+<span id="cb12-21"><a href="#cb12-21" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb12-22"><a href="#cb12-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_brewer</span>(<span class="at">palette =</span> <span class="st">"Blues"</span>) <span class="sc">+</span></span>
+<span id="cb12-23"><a href="#cb12-23" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb12-24"><a href="#cb12-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"Target Heading"</span>, <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"Predicted SD of error ("</span>, sigma, <span class="st">")"</span>)), <span class="at">colour =</span> <span class="st">"|Feedback Offset|"</span>)</span>
+<span id="cb12-25"><a href="#cb12-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-26"><a href="#cb12-26" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma from both fitted models across offset magnitude, by target, and combine</span></span>
+<span id="cb12-27"><a href="#cb12-27" aria-hidden="true" tabindex="-1"></a>hybrid_pred_by_offset <span class="ot">&lt;-</span> <span class="fu">expand_grid</span>(<span class="at">fb_offset =</span> <span class="fu">seq</span>(<span class="dv">0</span>, <span class="dv">180</span>, <span class="at">length.out =</span> <span class="dv">200</span>),</span>
+<span id="cb12-28"><a href="#cb12-28" aria-hidden="true" tabindex="-1"></a>                                      <span class="at">target =</span> <span class="fu">c</span>(<span class="dv">0</span>, <span class="dv">90</span>, <span class="dv">180</span>, <span class="dv">270</span>, <span class="dv">360</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb12-29"><a href="#cb12-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">subj =</span> <span class="fu">factor</span>(<span class="st">"population"</span>)) <span class="sc">%&gt;%</span></span>
+<span id="cb12-30"><a href="#cb12-30" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">uni_mu =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-31"><a href="#cb12-31" aria-hidden="true" tabindex="-1"></a>                           <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-32"><a href="#cb12-32" aria-hidden="true" tabindex="-1"></a>         <span class="at">uni_sigma =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-33"><a href="#cb12-33" aria-hidden="true" tabindex="-1"></a>                              <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-34"><a href="#cb12-34" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_mu =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"mu"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-35"><a href="#cb12-35" aria-hidden="true" tabindex="-1"></a>                             <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-36"><a href="#cb12-36" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_sigma =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>, <span class="at">newdata =</span> ., <span class="at">type =</span> <span class="st">"response"</span>,</span>
+<span id="cb12-37"><a href="#cb12-37" aria-hidden="true" tabindex="-1"></a>                                <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity))) <span class="sc">%&gt;%</span></span>
+<span id="cb12-38"><a href="#cb12-38" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Precision-weighted model averaging</span></span>
+<span id="cb12-39"><a href="#cb12-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">uni_precision =</span> <span class="dv">1</span> <span class="sc">/</span> uni_sigma<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb12-40"><a href="#cb12-40" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_precision =</span> <span class="dv">1</span> <span class="sc">/</span> multi_sigma<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb12-41"><a href="#cb12-41" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">sqrt</span>(<span class="dv">1</span> <span class="sc">/</span> (uni_precision <span class="sc">+</span> multi_precision)))</span>
+<span id="cb12-42"><a href="#cb12-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-43"><a href="#cb12-43" aria-hidden="true" tabindex="-1"></a><span class="co"># Define the plot for predicted sigma vs. offset magnitude, by target</span></span>
+<span id="cb12-44"><a href="#cb12-44" aria-hidden="true" tabindex="-1"></a>hybrid_plot_sigma_offset <span class="ot">&lt;-</span> hybrid_pred_by_offset <span class="sc">%&gt;%</span></span>
+<span id="cb12-45"><a href="#cb12-45" aria-hidden="true" tabindex="-1"></a>  <span class="fu">ggplot</span>(<span class="fu">aes</span>(<span class="at">x =</span> fb_offset, <span class="at">y =</span> pred_sigma, <span class="at">colour =</span> <span class="fu">factor</span>(target))) <span class="sc">+</span></span>
+<span id="cb12-46"><a href="#cb12-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_line</span>() <span class="sc">+</span></span>
+<span id="cb12-47"><a href="#cb12-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_vline</span>(<span class="at">xintercept =</span> <span class="dv">60</span>, <span class="at">linetype =</span> <span class="st">"dashed"</span>) <span class="sc">+</span></span>
+<span id="cb12-48"><a href="#cb12-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_colour_brewer</span>(<span class="at">palette =</span> <span class="st">"Oranges"</span>) <span class="sc">+</span></span>
+<span id="cb12-49"><a href="#cb12-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_classic</span>() <span class="sc">+</span></span>
+<span id="cb12-50"><a href="#cb12-50" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(<span class="at">x =</span> <span class="st">"|Feedback Offset|"</span>, <span class="at">y =</span> <span class="fu">expression</span>(<span class="fu">paste</span>(<span class="st">"Predicted SD of error ("</span>, sigma, <span class="st">")"</span>)), <span class="at">colour =</span> <span class="st">"Target Heading"</span>)</span>
+<span id="cb12-51"><a href="#cb12-51" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-52"><a href="#cb12-52" aria-hidden="true" tabindex="-1"></a>hybrid_plot_sigma_target</span>
+<span id="cb12-53"><a href="#cb12-53" aria-hidden="true" tabindex="-1"></a>hybrid_plot_sigma_offset</span>
+<span id="cb12-54"><a href="#cb12-54" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-55"><a href="#cb12-55" aria-hidden="true" tabindex="-1"></a><span class="co"># Predict mu and sigma from both fitted models on test</span></span>
+<span id="cb12-56"><a href="#cb12-56" aria-hidden="true" tabindex="-1"></a>hybrid_test_pred <span class="ot">&lt;-</span> test <span class="sc">%&gt;%</span></span>
+<span id="cb12-57"><a href="#cb12-57" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">uni_mu =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"mu"</span>,</span>
+<span id="cb12-58"><a href="#cb12-58" aria-hidden="true" tabindex="-1"></a>                           <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb12-59"><a href="#cb12-59" aria-hidden="true" tabindex="-1"></a>                           <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-60"><a href="#cb12-60" aria-hidden="true" tabindex="-1"></a>         <span class="at">uni_sigma =</span> <span class="fu">predict</span>(unisensory, <span class="at">what =</span> <span class="st">"sigma"</span>,</span>
+<span id="cb12-61"><a href="#cb12-61" aria-hidden="true" tabindex="-1"></a>                              <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb12-62"><a href="#cb12-62" aria-hidden="true" tabindex="-1"></a>                              <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-63"><a href="#cb12-63" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_mu =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"mu"</span>,</span>
+<span id="cb12-64"><a href="#cb12-64" aria-hidden="true" tabindex="-1"></a>                             <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb12-65"><a href="#cb12-65" aria-hidden="true" tabindex="-1"></a>                             <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity)),</span>
+<span id="cb12-66"><a href="#cb12-66" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_sigma =</span> <span class="fu">predict</span>(multisensory, <span class="at">what =</span> <span class="st">"sigma"</span>,</span>
+<span id="cb12-67"><a href="#cb12-67" aria-hidden="true" tabindex="-1"></a>                                <span class="at">newdata =</span> test <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity),</span>
+<span id="cb12-68"><a href="#cb12-68" aria-hidden="true" tabindex="-1"></a>                                <span class="at">type =</span> <span class="st">"response"</span>, <span class="at">data =</span> train <span class="sc">%&gt;%</span> <span class="fu">select</span>(<span class="sc">-</span>fb_validity))) <span class="sc">%&gt;%</span></span>
+<span id="cb12-69"><a href="#cb12-69" aria-hidden="true" tabindex="-1"></a>  <span class="co"># Precision-weighted model averaging</span></span>
+<span id="cb12-70"><a href="#cb12-70" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">uni_precision =</span> <span class="dv">1</span> <span class="sc">/</span> uni_sigma<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb12-71"><a href="#cb12-71" aria-hidden="true" tabindex="-1"></a>         <span class="at">multi_precision =</span> <span class="dv">1</span> <span class="sc">/</span> multi_sigma<span class="sc">^</span><span class="dv">2</span>,</span>
+<span id="cb12-72"><a href="#cb12-72" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_sigma =</span> <span class="fu">sqrt</span>(<span class="dv">1</span> <span class="sc">/</span> (uni_precision <span class="sc">+</span> multi_precision)),</span>
+<span id="cb12-73"><a href="#cb12-73" aria-hidden="true" tabindex="-1"></a>         <span class="at">pred_mu =</span> (uni_mu <span class="sc">*</span> uni_precision <span class="sc">+</span> multi_mu <span class="sc">*</span> multi_precision) <span class="sc">/</span> (uni_precision <span class="sc">+</span> multi_precision))</span>
+<span id="cb12-74"><a href="#cb12-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb12-75"><a href="#cb12-75" aria-hidden="true" tabindex="-1"></a><span class="co"># Total negative log-likelihood per test subject</span></span>
+<span id="cb12-76"><a href="#cb12-76" aria-hidden="true" tabindex="-1"></a>hybrid_nll_by_subj <span class="ot">&lt;-</span> hybrid_test_pred <span class="sc">%&gt;%</span></span>
+<span id="cb12-77"><a href="#cb12-77" aria-hidden="true" tabindex="-1"></a>  <span class="fu">group_by</span>(subj) <span class="sc">%&gt;%</span></span>
+<span id="cb12-78"><a href="#cb12-78" aria-hidden="true" tabindex="-1"></a>  <span class="fu">summarise</span>(<span class="at">nll =</span> <span class="sc">-</span><span class="fu">sum</span>(<span class="fu">dNO</span>(error, <span class="at">mu =</span> pred_mu, <span class="at">sigma =</span> pred_sigma, <span class="at">log =</span> <span class="cn">TRUE</span>)))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</details>
+<div id="fig-model-hybrid" class="quarto-layout-panel">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-model-hybrid-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<div class="quarto-layout-row">
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-hybrid" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-hybrid-1" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-hybrid-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-hybrid-1.png" id="fig-model-hybrid-1" class="img-fluid figure-img" data-ref-parent="fig-model-hybrid" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-hybrid-1-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(a)
+</figcaption>
+</figure>
+</div>
+</div>
+<div class="cell-output-display quarto-layout-cell-subref quarto-layout-cell" data-ref-parent="fig-model-hybrid" style="flex-basis: 50.0%;justify-content: flex-start;">
+<div id="fig-model-hybrid-2" class="quarto-float quarto-figure quarto-figure-center anchored" width="480">
+<figure class="quarto-float quarto-subfloat-fig figure">
+<div aria-describedby="fig-model-hybrid-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="heading-estimation-multisensory-proc_files/figure-html/fig-model-hybrid-2.png" id="fig-model-hybrid-2" class="img-fluid figure-img" data-ref-parent="fig-model-hybrid" width="480">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-subfloat-caption quarto-subfloat-fig" id="fig-model-hybrid-2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+(b)
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-model-hybrid-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;9: <strong>Hybrid model: Predicted SD of error against target, and against feedback offset magnitude</strong>
+</figcaption>
+</figure>
+</div>
+<p>This model combines the unisensory and multisensory models’ predictions by weighting them according to their precisions <span class="citation" data-cites="Noppeney_2021">[@Noppeney_2021]</span>. The combined predicted SD of error is lower than either individual model’s prediction against target (<a href="#fig-model-hybrid-1" class="quarto-xref">Figure&nbsp;9 (a)</a>) and against offset magnitude (<a href="#fig-model-hybrid-2" class="quarto-xref">Figure&nbsp;9 (b)</a>). The hybrid model has reduced uncertainity as well:</p>
+<table class="caption-top table">
+<tbody>
+<tr class="odd">
+<td>Unisensory uncertainity</td>
+<td><em>14<span class="math inline">\(^\circ\)</span></em> to <em>39<span class="math inline">\(^\circ\)</span></em></td>
+</tr>
+<tr class="even">
+<td>Multisensory uncertainity</td>
+<td><em>13<span class="math inline">\(^\circ\)</span></em> to <em>73<span class="math inline">\(^\circ\)</span></em></td>
+</tr>
+<tr class="odd">
+<td>Hybrid uncertainity</td>
+<td><em>9<span class="math inline">\(^\circ\)</span></em> to <em>34<span class="math inline">\(^\circ\)</span></em></td>
+</tr>
+</tbody>
+</table>
 </section>
 </section>
 
