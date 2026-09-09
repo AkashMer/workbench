@@ -89,15 +89,7 @@ data <- dataconf %>%
   # Convert the subject column into a factor
   mutate(subj = factor(as.integer(str_remove(subj, "^s")))) %>%
   # Convert the condition column into a factor
-  mutate(condition = factor(condition, levels = c("noFB", "FB"))) %>%
-  # Since feedback validity labels are not present, use label reliable for gaussian (0, 30) +/- 3SD
-  mutate(fb_validity = factor(case_when(condition == "noFB" ~ NA,
-                                        abs(fb_offset) <= 90 ~ "reliable",
-                                        TRUE ~ "unreliable"),
-                              levels = c("reliable", "unreliable"))) %>%
-  # Create a new column to signify the three trial types
-  mutate(trial_type = if_else(condition == "noFB", "noFB", as.character(fb_validity))) %>%
-  mutate(trial_type = factor(trial_type, levels = c("noFB", "reliable", "unreliable")))
+  mutate(condition = factor(condition, levels = c("noFB", "FB")))
 
 # Split into train (80%) and test (20%) by whole subjects
 set.seed(246) # For reproducibility
@@ -184,14 +176,6 @@ plot_target <- train %>%
     axis.text = element_text(size = 9)
   )
 
-# Confirm the ~70/30 split matches the original design for all participants
-reliabililty_by_subj <- train %>%
-  filter(condition == "FB") %>%
-  summarise(prop_reliable = mean(abs(fb_offset) <= 90), .by = subj)
-# Find the mean and sd of reliable trials across subjects
-reliability_mean <- mean(reliabililty_by_subj$prop_reliable)
-reliability_sd <- sd(reliabililty_by_subj$prop_reliable)
-
 # Display distribution of fb_offset which was drawn from two components
 breaks <- seq(-180, 180, by = 20)
 bin_width <- 20
@@ -237,7 +221,7 @@ plot_fb_offset
 ```
 
 - Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`) (@fig-stimulus-design-1). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
-- Visual feedback offset distribution resembles a gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that (@fig-stimulus-design-2). For illustration purposes only, the reliability of the visual feedback is tracked. Any trial with the offset falling in the above range is marked as reliable to approximate the reliability from the participant's viewpoint. This resulted in `r round(reliability_mean, 4)*100`% $\pm$ `r 2*round(reliability_sd, 4)*100`% marked as reliable.
+- Visual feedback offset distribution resembles a gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that (@fig-stimulus-design-2), consistent with how the offsets were generated.
 
 ### Response Characteristics
 
@@ -369,18 +353,17 @@ plot_C <- ggplot(condition_median_boot, aes(x = condition, y = median)) +
   theme_classic() +
   labs(x = "Condition", y = "Median(error) with 95% bootstrap CI")
 
-# Define the 20 degree |fb_offset| bins for plotting purposes, FB trials only
+# Define the 20 degree signed fb_offset bins for plotting purposes
 fb_data <- train %>%
-  filter(condition == "FB") %>%
-  mutate(abs_offset = abs(fb_offset))
-offset_bin_breaks <- seq(0, 180, by = 20)
+  filter(condition == "FB")
+offset_bin_breaks <- seq(-180, 180, by = 20)
 offset_bin_labels <- paste(head(offset_bin_breaks, -1), tail(offset_bin_breaks, -1), sep = "-")
 offset_bins <- cut(
-  fb_data$abs_offset, breaks = offset_bin_breaks,
+  fb_data$fb_offset, breaks = offset_bin_breaks,
   include.lowest = TRUE, labels = offset_bin_labels
 )
 
-# Compute the median error per |fb_offset| bin
+# Compute the median error per fb_offset bin
 offset_median_boot_by_bin <- fb_data %>%
   mutate(offset_bin = offset_bins) %>%
   group_by(offset_bin) %>%
@@ -395,12 +378,12 @@ offset_median_boot_by_bin <- fb_data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error vs. |fb_offset|
+# Define the plot for error vs. fb_offset
 plot_D <- ggplot(offset_median_boot_by_bin, aes(x = offset_bin, y = median)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Visual feedback offset magnitude", y = "Median(error) with 95% bootstrap CI")
+  labs(x = "Visual feedback offset", y = "Median(error) with 95% bootstrap CI")
 
 plot_C
 plot_D
@@ -413,17 +396,23 @@ condition_median_diff_boot <- boot(subjs, function(d, i) {
 }, R = R_boot)
 condition_median_diff_ci <- boot.ci(condition_median_diff_boot, type = "perc")$percent[4:5]
 
-# Does error's median grow with the magnitude of fb_offset?
+# Does median error differ between mirrored positive/negative offset bins on average?
 # Controlled for subjects
-offset_slope_boot <- boot(subjs, function(d, i) {
-  samp <- map_dfr(d[i], ~ fb_data %>% filter(subj == .x))
-  coef(rq(error ~ abs_offset, tau = 0.5, data = samp))["abs_offset"]
+n_offset_bins <- length(offset_bin_labels)
+offset_data <- fb_data %>% mutate(offset_bin = offset_bins)
+offset_mirror_pos_bins <- offset_bin_labels[(n_offset_bins / 2 + 1):n_offset_bins]
+offset_mirror_neg_bins <- rev(offset_bin_labels[1:(n_offset_bins / 2)])
+offset_mirror_median_diff_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ offset_data %>% filter(subj == .x))
+  mean(map2_dbl(offset_mirror_pos_bins, offset_mirror_neg_bins, ~ {
+    median(samp$error[samp$offset_bin == .x]) - median(samp$error[samp$offset_bin == .y])
+  }))
 }, R = R_boot)
-offset_slope_ci <- boot.ci(offset_slope_boot, type = "perc")$percent[4:5]
+offset_mirror_median_diff_ci <- boot.ci(offset_mirror_median_diff_boot, type = "perc")$percent[4:5]
 ```
 
 - Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [`r round(condition_median_diff_ci[1], 2)`, `r round(condition_median_diff_ci[2], 2)`]), consistent with varying reliability of the visual feedback (@fig-error-by-condition-offset-1). The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense [@Noppeney_2021].
-- But the median error does not increase monotonically with offset magnitude (bootstrapped 95% CI for median regression slope [`r round(offset_slope_ci[1], 3)`, `r round(offset_slope_ci[2], 3)`]) (@fig-error-by-condition-offset-2). The reliability of the cue itself is taken into consideration beyond a certain limit (around 60$^\circ$ in this case). The extent of integration between proprioception and vision depends more on the size of the conflict between the information from both sources and less on the uncertainity of the information itself [@Noppeney_2021].
+- Median error is low for reliable visual feedback (low offsets), increases rapidly for positive offsets till around 60$^\circ$ and decreases thereafter (@fig-error-by-condition-offset-2). On the other hand, error increases gradually for negative offsets, plateaus around 60$^\circ$, then increases again (@fig-error-by-condition-offset-2). Thus, participants' responses may be affected by the direction of the feedback offset (mirrored positive vs. negative bins, bootstrapped 95% CI of difference = [`r round(offset_mirror_median_diff_ci[1], 2)`, `r round(offset_mirror_median_diff_ci[2], 2)`]) along with it's reliability. The extent of integration between proprioception and vision depends on the size of the conflict between the information from both sources [@Noppeney_2021].
 
 ```{r}
 #| label: fig-error-variance
@@ -479,7 +468,7 @@ plot_F <- ggplot(condition_sd_boot, aes(x = condition, y = sd)) +
   theme_classic() +
   labs(x = "Condition", y = "SD(error) with 95% bootstrap CI")
 
-# Does error's SD grow with the magnitude of fb_offset?
+# Does error's SD grow with fb_offset?
 # Controlled for subjects
 offset_sd_boot_by_bin <- fb_data %>%
   mutate(offset_bin = offset_bins) %>%
@@ -494,12 +483,12 @@ offset_sd_boot_by_bin <- fb_data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error's SD vs. |fb_offset|
+# Define the plot for error's SD vs. fb_offset
 plot_G <- ggplot(offset_sd_boot_by_bin, aes(x = offset_bin, y = sd)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Visual feedback offset magnitude", y = "SD(error) with 95% bootstrap CI")
+  labs(x = "Visual feedback offset", y = "SD(error) with 95% bootstrap CI")
 
 plot_E
 plot_F
@@ -513,6 +502,16 @@ condition_sd_diff_boot <- boot(subjs, function(d, i) {
 }, R = R_boot)
 condition_sd_diff_ci <- boot.ci(condition_sd_diff_boot, type = "perc")$percent[4:5]
 
+# Does error's SD differ between mirrored positive/negative offset bins on average?
+# Controlled for subjects
+offset_mirror_sd_diff_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ offset_data %>% filter(subj == .x))
+  mean(map2_dbl(offset_mirror_pos_bins, offset_mirror_neg_bins, ~ {
+    sd(samp$error[samp$offset_bin == .x]) - sd(samp$error[samp$offset_bin == .y])
+  }))
+}, R = R_boot)
+offset_mirror_sd_diff_ci <- boot.ci(offset_mirror_sd_diff_boot, type = "perc")$percent[4:5]
+
 # Does |error| (1/accuracy) change with viewAmount (attention paid to the feedback cue)?
 # FB trials only; controlled for subjects
 accuracy_view_amount_slope_boot <- boot(subjs, function(d, i) {
@@ -524,11 +523,164 @@ accuracy_view_amount_slope_ci <- boot.ci(accuracy_view_amount_slope_boot, type =
 
 - Standard deviation (SD) of error maybe a measure of uncertainity about the information. As @fig-error-variance-1 shows, SD of error grows with task difficulty, but it rises in two phases separated by a plateau in the range of 120$^\circ$ to 240$^\circ$.
 - The amount of uncertainity was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference = [`r round(condition_sd_diff_ci[1], 2)`, `r round(condition_sd_diff_ci[2], 2)`]) (@fig-error-variance-2).
-- The amount of uncertainity rises with unreliability of the visual feedback but then plateaus around 60$^\circ$ (@fig-error-variance-3). The internal model might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information.
+- The amount of uncertainity rises with unreliability of the visual feedback but plateaus around 60$^\circ$ for both positive and negative offsets (@fig-error-variance-3). The uncertainity might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information. The uncertainity is higher for negative feedback offsets as compared to the corresponding positive offsets (mirrored positive vs. negative bins, bootstrapped 95% CI of difference = [`r round(offset_mirror_sd_diff_ci[1], 2)`, `r round(offset_mirror_sd_diff_ci[2], 2)`]).
 
-From the above characteristics of the participants' responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities [@Noppeney_2021], but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources.
+```{r}
+#| label: fig-error-by-trial-duration
+#| fig-cap: "**Median and SD of error across trial duration deciles**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 5
+#| fig-height: 6
 
-Accuracy (1/`|error|`) improves as attention increases (`viewAmount` decreases) (bootstrapped 95% CI for the median regression slope [`r round(accuracy_view_amount_slope_ci[1], 3)`, `r round(accuracy_view_amount_slope_ci[2], 3)`]). The accuracy of the best model will be validated against this behavioral characteritic.
+# Define the trial_duration decile bins for plotting purposes
+duration_bin_breaks <- quantile(train$trial_duration, probs = seq(0, 1, by = 0.1))
+# Label bins in seconds for readability; computation stays in msec
+duration_bin_labels <- paste(head(round(duration_bin_breaks / 1000, 1), -1), tail(round(duration_bin_breaks / 1000, 1), -1), sep = "-")
+duration_bins <- cut(
+  train$trial_duration, breaks = duration_bin_breaks,
+  include.lowest = TRUE, labels = duration_bin_labels
+)
+
+# Compute the median of error per trial_duration bin
+plot_error_by_duration <- train %>%
+  mutate(duration_bin = duration_bins) %>%
+  group_by(duration_bin) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      median(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
+  }) %>%
+    # Build the plot
+    ggplot(aes(x = duration_bin, y = median)) +
+    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "trial duration (sec)", y = "Median(error) with 95% bootstrap CI")
+
+# Compute the SD of error per trial_duration bin
+plot_error_sd_by_duration <- train %>%
+  mutate(duration_bin = duration_bins) %>%
+  group_by(duration_bin) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  }) %>%
+    # Build the plot
+    ggplot(aes(x = duration_bin, y = sd)) +
+    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "trial duration (sec)", y = "SD(error) with 95% bootstrap CI")
+
+plot_error_by_duration
+plot_error_sd_by_duration
+
+# Does error's median grow with trial_duration?
+# Controlled for subjects
+duration_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ train %>% filter(subj == .x))
+  coef(rq(error ~ trial_duration, tau = 0.5, data = samp))["trial_duration"]
+}, R = R_boot)
+duration_slope_ci <- boot.ci(duration_slope_boot, type = "perc")$percent[4:5]
+```
+
+- Median error does not depend on trial duration (bootstrapped 95% CI for median regression slope [`r format(round(duration_slope_ci[1], 4), scientific = FALSE)`, `r format(round(duration_slope_ci[2], 4), scientific = FALSE)`]) (@fig-error-by-trial-duration-1), but the uncertainity grows with trial duration (@fig-error-by-trial-duration-2).
+
+```{r}
+#| label: fig-error-by-fb-time
+#| fig-cap: "**Median and SD of error across different times (deciles) the feedback was displayed**"
+#| fig-subcap: true
+#| layout-ncol: 2
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 5
+#| fig-height: 6
+
+# Define the fb_time decile bins for plotting purposes, FB trials only
+fb_time_bin_breaks <- quantile(fb_data$fb_time, probs = seq(0, 1, by = 0.1))
+# Label bins in seconds for readability; computation stays in msec
+fb_time_bin_labels <- paste(head(round(fb_time_bin_breaks / 1000, 1), -1), tail(round(fb_time_bin_breaks / 1000, 1), -1), sep = "-")
+fb_time_bins <- cut(
+  fb_data$fb_time, breaks = fb_time_bin_breaks,
+  include.lowest = TRUE, labels = fb_time_bin_labels
+)
+
+# Compute the median of error per fb_time bin
+plot_error_by_fb_time <- fb_data %>%
+  mutate(fb_time_bin = fb_time_bins) %>%
+  group_by(fb_time_bin) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      median(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
+  }) %>%
+    # Build the plot
+    ggplot(aes(x = fb_time_bin, y = median)) +
+    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "feedback display time (sec)", y = "Median(error) with 95% bootstrap CI")
+
+# Compute the SD of error per fb_time bin
+plot_error_sd_by_fb_time <- fb_data %>%
+  mutate(fb_time_bin = fb_time_bins) %>%
+  group_by(fb_time_bin) %>%
+  # Stratify by participants
+  group_modify(~ {
+    bin_data <- .x
+    bin_subjs <- unique(bin_data$subj)
+    b <- boot(bin_subjs, function(d, i) {
+      samp <- map_dfr(d[i], ~ bin_data %>% filter(subj == .x))
+      sd(samp$error)
+    }, R = R_boot)
+    ci <- boot.ci(b, type = "perc")$percent[4:5]
+    tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
+  }) %>%
+    # Build the plot
+    ggplot(aes(x = fb_time_bin, y = sd)) +
+    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+    theme_classic() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "feedback display time (sec)", y = "SD(error) with 95% bootstrap CI")
+
+plot_error_by_fb_time
+plot_error_sd_by_fb_time
+
+# Does error's median grow with fb_time?
+fb_time_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ fb_data %>% filter(subj == .x))
+  coef(rq(error ~ fb_time, tau = 0.5, data = samp))["fb_time"]
+}, R = R_boot)
+fb_time_slope_ci <- boot.ci(fb_time_slope_boot, type = "perc")$percent[4:5]
+```
+
+- Similarly, median error does not depend on when the feedback was displayed (bootstrapped 95% CI for median regression slope [`r format(round(fb_time_slope_ci[1], 4), scientific = FALSE)`, `r format(round(fb_time_slope_ci[2], 4), scientific = FALSE)`]) (@fig-error-by-fb-time-1), but the uncertainity is less when the feedback is displayed earlier rather than later (@fig-error-by-fb-time-2).  
+
+From the above characteristics of the participants' responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities [@Noppeney_2021], but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources. The uncertainity depends on task difficulty (`target`), presence or absence of visual feedback, reliability of the visual feedback (`|fb_offset|`), 
+
+Accuracy (1/`|error|`) improves as attention increases (`viewAmount` decreases) (bootstrapped 95% CI for the median regression slope [`r round(accuracy_view_amount_slope_ci[1], 3)`, `r round(accuracy_view_amount_slope_ci[2], 3)`]). The accuracy of the best model will be validated against this behavioral characteritic.  
 
 ### Subjective Measure (make it more descriptive)
 
@@ -646,16 +798,16 @@ unisensory <- gamlss(
   formula = unisensory_formula,
   sigma.formula = unisensory_sigma_formula,
   family = unisensory_family,
-  data = train %>% select(-fb_validity),
+  data = train,
   control = gamlss_control
 )
 
 # Predict mu and sigma continuously across target
 unisensory_pred_by_target <- tibble(target = seq(0, 360, length.out = 200), subj = factor("population")) %>%
   mutate(pred_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
-                            data = train %>% select(-fb_validity)),
+                            data = train),
          pred_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
-                               data = train %>% select(-fb_validity)))
+                               data = train))
 
 # Define the plot for predicted sigma vs. target
 unisensory_plot_sigma <- unisensory_pred_by_target %>%
@@ -680,11 +832,11 @@ unisensory_plot_qq
 # Predict mu and sigma on test set subjects
 unisensory_test_pred <- test %>%
   mutate(pred_mu = predict(unisensory, what = "mu",
-                            newdata = test %>% select(-fb_validity),
-                            type = "response", data = train %>% select(-fb_validity)),
+                            newdata = test,
+                            type = "response", data = train),
          pred_sigma = predict(unisensory, what = "sigma",
-                               newdata = test %>% select(-fb_validity),
-                               type = "response", data = train %>% select(-fb_validity)))
+                               newdata = test,
+                               type = "response", data = train))
 
 # Total negative log-likelihood per test subject
 unisensory_nll_by_subj <- unisensory_test_pred %>%
@@ -720,7 +872,7 @@ naive_multisensory <- gamlss(
   formula = naive_multisensory_formula,
   sigma.formula = naive_multisensory_sigma_formula,
   family = naive_multisensory_family,
-  data = train %>% select(-fb_validity),
+  data = train,
   control = gamlss_control
 )
 
@@ -729,9 +881,9 @@ naive_multisensory_pred_by_target <- expand_grid(target = seq(0, 360, length.out
                                                   condition = levels(train$condition)) %>%
   mutate(condition = factor(condition, levels = levels(train$condition)), subj = factor("population")) %>%
   mutate(pred_mu = predict(naive_multisensory, what = "mu", newdata = ., type = "response",
-                            data = train %>% select(-fb_validity)),
+                            data = train),
          pred_sigma = predict(naive_multisensory, what = "sigma", newdata = ., type = "response",
-                               data = train %>% select(-fb_validity)))
+                               data = train))
 
 # Define the plot for predicted sigma vs. target, by condition
 naive_multisensory_plot_sigma <- naive_multisensory_pred_by_target %>%
@@ -757,11 +909,11 @@ naive_multisensory_plot_qq
 # Predict mu and sigma on test set subjects
 naive_multisensory_test_pred <- test %>%
   mutate(pred_mu = predict(naive_multisensory, what = "mu",
-                            newdata = test %>% select(-fb_validity),
-                            type = "response", data = train %>% select(-fb_validity)),
+                            newdata = test,
+                            type = "response", data = train),
          pred_sigma = predict(naive_multisensory, what = "sigma",
-                               newdata = test %>% select(-fb_validity),
-                               type = "response", data = train %>% select(-fb_validity)))
+                               newdata = test,
+                               type = "response", data = train))
 
 # Total negative log-likelihood per test subject
 naive_multisensory_nll_by_subj <- naive_multisensory_test_pred %>%
@@ -797,7 +949,7 @@ multisensory <- gamlss(
   formula = multisensory_formula,
   sigma.formula = multisensory_sigma_formula,
   family = multisensory_family,
-  data = train %>% select(-fb_validity),
+  data = train,
   control = gamlss_control
 )
 
@@ -806,9 +958,9 @@ multisensory_pred_by_target <- expand_grid(target = seq(0, 360, length.out = 200
                                             fb_offset = c(0, 45, 90, 135, 180)) %>%
   mutate(subj = factor("population")) %>%
   mutate(pred_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
-                            data = train %>% select(-fb_validity)),
+                            data = train),
          pred_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
-                               data = train %>% select(-fb_validity)))
+                               data = train))
 
 # Define the plot for predicted sigma vs. target, by offset magnitude
 multisensory_plot_sigma_target <- multisensory_pred_by_target %>%
@@ -823,9 +975,9 @@ multisensory_pred_by_offset <- expand_grid(fb_offset = seq(0, 180, length.out = 
                                             target = c(0, 90, 180, 270, 360)) %>%
   mutate(subj = factor("population")) %>%
   mutate(pred_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
-                            data = train %>% select(-fb_validity)),
+                            data = train),
          pred_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
-                               data = train %>% select(-fb_validity)))
+                               data = train))
 
 # Define the plot for predicted sigma vs. offset magnitude, by target
 multisensory_plot_sigma_offset <- multisensory_pred_by_offset %>%
@@ -845,11 +997,11 @@ multisensory_plot_sigma_offset
 # Predict mu and sigma on test set subjects
 multisensory_test_pred <- test %>%
   mutate(pred_mu = predict(multisensory, what = "mu",
-                            newdata = test %>% select(-fb_validity),
-                            type = "response", data = train %>% select(-fb_validity)),
+                            newdata = test,
+                            type = "response", data = train),
          pred_sigma = predict(multisensory, what = "sigma",
-                               newdata = test %>% select(-fb_validity),
-                               type = "response", data = train %>% select(-fb_validity)))
+                               newdata = test,
+                               type = "response", data = train))
 
 # Total negative log-likelihood per test subject
 multisensory_nll_by_subj <- multisensory_test_pred %>%
@@ -877,13 +1029,13 @@ hybrid_pred_by_target <- expand_grid(target = seq(0, 360, length.out = 200),
                                       fb_offset = c(0, 45, 90, 135, 180)) %>%
   mutate(subj = factor("population")) %>%
   mutate(uni_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
-                           data = train %>% select(-fb_validity)),
+                           data = train),
          uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
-                              data = train %>% select(-fb_validity)),
+                              data = train),
          multi_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
-                             data = train %>% select(-fb_validity)),
+                             data = train),
          multi_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
-                                data = train %>% select(-fb_validity))) %>%
+                                data = train)) %>%
   # Precision-weighted model averaging
   mutate(uni_precision = 1 / uni_sigma^2,
          multi_precision = 1 / multi_sigma^2,
@@ -902,13 +1054,13 @@ hybrid_pred_by_offset <- expand_grid(fb_offset = seq(0, 180, length.out = 200),
                                       target = c(0, 90, 180, 270, 360)) %>%
   mutate(subj = factor("population")) %>%
   mutate(uni_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
-                           data = train %>% select(-fb_validity)),
+                           data = train),
          uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
-                              data = train %>% select(-fb_validity)),
+                              data = train),
          multi_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
-                             data = train %>% select(-fb_validity)),
+                             data = train),
          multi_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
-                                data = train %>% select(-fb_validity))) %>%
+                                data = train)) %>%
   # Precision-weighted model averaging
   mutate(uni_precision = 1 / uni_sigma^2,
          multi_precision = 1 / multi_sigma^2,
@@ -929,17 +1081,17 @@ hybrid_plot_sigma_offset
 # Predict mu and sigma from both fitted models on test
 hybrid_test_pred <- test %>%
   mutate(uni_mu = predict(unisensory, what = "mu",
-                           newdata = test %>% select(-fb_validity),
-                           type = "response", data = train %>% select(-fb_validity)),
+                           newdata = test,
+                           type = "response", data = train),
          uni_sigma = predict(unisensory, what = "sigma",
-                              newdata = test %>% select(-fb_validity),
-                              type = "response", data = train %>% select(-fb_validity)),
+                              newdata = test,
+                              type = "response", data = train),
          multi_mu = predict(multisensory, what = "mu",
-                             newdata = test %>% select(-fb_validity),
-                             type = "response", data = train %>% select(-fb_validity)),
+                             newdata = test,
+                             type = "response", data = train),
          multi_sigma = predict(multisensory, what = "sigma",
-                                newdata = test %>% select(-fb_validity),
-                                type = "response", data = train %>% select(-fb_validity))) %>%
+                                newdata = test,
+                                type = "response", data = train)) %>%
   # Precision-weighted model averaging
   mutate(uni_precision = 1 / uni_sigma^2,
          multi_precision = 1 / multi_sigma^2,
