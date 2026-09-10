@@ -1,2 +1,4 @@
 /.quarto/
 **/*.quarto_ipynb
+!/data/cv-log.txt
+!/data/*.rds
