@@ -257,8 +257,8 @@ multisensory2_mu_formula <- error ~ 1 + re(random = ~1|subj, level = 0)
 
 # The 2 confirmed winners from the first multisensory search
 multisensory2_winners <- list(
-  sigma_winner = ~ (target + trial_duration) * fb_offset + re(random = ~1|subj, level = 0),
-  nu_winner = ~ (target + trial_duration) * fb_offset + fb_time + re(random = ~1|subj, level = 0)
+  base_offset_interaction = ~ (target + trial_duration) * fb_offset + re(random = ~1|subj, level = 0),
+  base_offset_interaction_fb_time = ~ (target + trial_duration) * fb_offset + fb_time + re(random = ~1|subj, level = 0)
 )
 
 # New candidates isolating which base term interacts with fb_offset, and whether fb_offset:fb_time adds anything
@@ -281,8 +281,8 @@ multisensory2_param_candidates <- c(multisensory2_winners, multisensory2_new_can
 
 # Test each new sigma candidate against the confirmed nu winner, and each new nu candidate against the confirmed sigma winner
 multisensory2_grid <- bind_rows(
-  tibble(sigma_name = names(multisensory2_new_candidates), nu_name = "nu_winner"),
-  tibble(sigma_name = "sigma_winner", nu_name = names(multisensory2_new_candidates))
+  tibble(sigma_name = names(multisensory2_new_candidates), nu_name = "base_offset_interaction_fb_time"),
+  tibble(sigma_name = "base_offset_interaction", nu_name = names(multisensory2_new_candidates))
 )
 multisensory2_nll <- numeric(nrow(multisensory2_grid))
 
