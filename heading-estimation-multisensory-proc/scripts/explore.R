@@ -5,6 +5,7 @@ library(circular)
 library(rmcorr)
 library(boot)
 library(quantreg)
+library(gamlss)
 
 # Download the data files from the github repo
 # 1. Get the data path
@@ -674,7 +675,6 @@ boot.ci(conf_error_slope_boot, type = "perc")
 # Then condition added and then fb_offset added
 
 # Model type 1: BCI model
-library(gamlss)
 
 # 1. Naive BCI observer: Does not take feedback into consideration
 # respond ~ target + sigma, where sigma ~ a + b.target
@@ -779,3 +779,65 @@ ggplot(aes(x = model, y = mean_delta)) +
 # Both are positive => feedback_bci is the best model
 # But both condition and feedback model are difficult to connect behavioral uncertainity
 # Both condition and feedback models need to be modified so as to create competing uncentainities
+
+# Unisensory model: error distribution family search
+unisensory_mu_formula <- error ~ pbc(target) +
+                                  pb(trial_duration) +
+                                  re(random = ~1|subj, level = 0)
+unisensory_sigma_formula <- ~ pbc(target) +
+                                  pb(trial_duration) +
+                                  re(random = ~1|subj, level = 0)
+unisensory_family <- SST()
+
+unisensory_fit <- gamlss(
+  formula = unisensory_mu_formula,
+  sigma.formula = unisensory_sigma_formula,
+  family = unisensory_family,
+  data = eda_data %>% select(-fb_validity),
+  method = mixed(20, 100),
+  control = gamlss.control(n.cyc = 300)
+)
+wp(unisensory_fit)
+
+# Visual-only model: FB trials only
+fb_data <- eda_data %>% filter(condition == "FB")
+visual_only_mu_formula <- error ~ pbc(target) +
+                                  pb(fb_offset) +
+                                  re(random = ~1|subj, level = 0)
+visual_only_sigma_formula <- ~ pbc(target) +
+                                  pb(fb_offset) +
+                                  re(random = ~1|subj, level = 0)
+visual_only_family <- SST()
+
+visual_only_fit <- gamlss(
+  formula = visual_only_mu_formula,
+  sigma.formula = visual_only_sigma_formula,
+  family = visual_only_family,
+  data = fb_data,
+  method = mixed(20, 100),
+  control = gamlss.control(n.cyc = 300)
+)
+wp(visual_only_fit)
+
+# Multisensory model: FB trials only, most complex, non-deterministic
+multisensory_mu_formula <- error ~ pbc(target) + pb(trial_duration) + pb(fb_offset) + pb(viewAmount) +
+                                    pvc(target, by = fb_offset) +
+                                    pvc(trial_duration, by = fb_offset) +
+                                    pvc(viewAmount, by = fb_offset) +
+                                    re(random = ~1|subj, level = 0)
+multisensory_sigma_formula <- ~ pbc(target) + pb(trial_duration) + pb(fb_offset) + pb(viewAmount) +
+                                pvc(target, by = fb_offset) +
+                                pvc(trial_duration, by = fb_offset) +
+                                pvc(viewAmount, by = fb_offset) +
+                                re(random = ~1|subj, level = 0)
+multisensory_family <- SST()
+
+multisensory_fit <- gamlss(
+  formula = multisensory_mu_formula,
+  sigma.formula = multisensory_sigma_formula,
+  family = multisensory_family,
+  data = fb_data,
+  method = mixed(20, 100),
+  control = gamlss.control(n.cyc = 300)
+)
+wp(multisensory_fit)
