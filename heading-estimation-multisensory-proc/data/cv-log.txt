@@ -100,3 +100,9 @@ row 11 of 14 done, nll = NA
 row 12 of 14 done, nll = 41750.37 
 row 13 of 14 done, nll = 41736.84 
 row 14 of 14 done, nll = 41774.83 
+
+ multisensory_condition 
+row 1 of 4 done, nll = 41725.17 
+row 2 of 4 done, nll = 41724.11 
+row 3 of 4 done, nll = 41732.19 
+row 4 of 4 done, nll = 41732.19 

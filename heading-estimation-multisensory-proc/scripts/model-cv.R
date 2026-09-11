@@ -253,6 +253,7 @@ saveRDS(multisensory_cv_results, here("data", "cv-multisensory.rds"))
 }
 
 # -- Multisensory Model, isolating target/trial_duration/fb_time interactions with fb_offset --
+if (FALSE) {
 multisensory2_mu_formula <- error ~ 1 + re(random = ~1|subj, level = 0)
 
 # The 2 confirmed winners from the first multisensory search
@@ -327,3 +328,66 @@ for (row in seq_len(nrow(multisensory2_grid))) {
 # Save results as derived data
 multisensory2_cv_results <- multisensory2_grid %>% mutate(nll = multisensory2_nll)
 saveRDS(multisensory2_cv_results, here("data", "cv-multisensory-interactions.rds"))
+}
+
+# -- Multisensory Model, testing condition back into mu --
+# Sigma and nu fixed at the confirmed winners from the multisensory search
+multisensory_condition_sigma_formula <- ~ target + trial_duration + fb_offset + trial_duration:fb_offset + re(random = ~1|subj, level = 0)
+multisensory_condition_nu_formula <- ~ (target + trial_duration) * fb_offset + fb_time + re(random = ~1|subj, level = 0)
+
+# Candidate mu formulas, whether location shifts by condition alone, additively with fb_offset, or interacting with fb_offset
+multisensory_condition_mu_candidates <- list(
+  intercept = error ~ 1 + re(random = ~1|subj, level = 0),
+  condition = error ~ condition + re(random = ~1|subj, level = 0),
+  condition_additive = error ~ condition + fb_offset + re(random = ~1|subj, level = 0),
+  condition_interaction = error ~ condition * fb_offset + re(random = ~1|subj, level = 0)
+)
+
+# Assign whole subjects to folds for this follow-up CV run
+multisensory_condition_k <- 5
+multisensory_condition_folded <- assign_subj_folds(train, "subj", multisensory_condition_k, seed = 246)
+
+# Every mu candidate to compare, sigma and nu held fixed
+multisensory_condition_grid <- tibble(mu_name = names(multisensory_condition_mu_candidates))
+multisensory_condition_nll <- numeric(nrow(multisensory_condition_grid))
+
+# Blank line then model name for log
+cat("\n", "multisensory_condition", "\n", file = cv_log_file, append = TRUE)
+
+# Fit and evaluate each mu candidate in turn
+for (row in seq_len(nrow(multisensory_condition_grid))) {
+  mu_form <- multisensory_condition_mu_candidates[[multisensory_condition_grid$mu_name[row]]]
+  fold_nll <- numeric(multisensory_condition_k)
+  # Refit on k-1 folds, evaluate on the held-out fold, once per fold
+  for (fold_id in seq_len(multisensory_condition_k)) {
+    fit_data <- multisensory_condition_folded %>% filter(fold != fold_id)
+    held_data <- multisensory_condition_folded %>% filter(fold == fold_id)
+    # Skip a fold if gamlss()/predict() errors
+    fold_nll[fold_id] <- tryCatch({
+      # Fit gamlss() directly rather than through gamlssCV, since re() breaks inside gamlssCV/gamlssVGD
+      m <- gamlss(
+        formula = mu_form,
+        sigma.formula = multisensory_condition_sigma_formula,
+        nu.formula = multisensory_condition_nu_formula,
+        family = SN2(),
+        data = fit_data,
+        control = gamlss_control
+      )
+      # Predict mu, sigma and nu on the held-out fold's subjects
+      pred <- held_data %>%
+        mutate(pred_mu = predict(m, what = "mu", newdata = ., type = "response", data = fit_data),
+               pred_sigma = predict(m, what = "sigma", newdata = ., type = "response", data = fit_data),
+               pred_nu = predict(m, what = "nu", newdata = ., type = "response", data = fit_data))
+      # Held-out negative log-likelihood for this fold
+      -sum(dSN2(pred$error, mu = pred$pred_mu, sigma = pred$pred_sigma, nu = pred$pred_nu, log = TRUE))
+    }, error = function(e) NA_real_)
+  }
+  # Total held-out NLL across all folds, NA if any fold failed to fit
+  multisensory_condition_nll[row] <- sum(fold_nll)
+  # Log progress for this row to the log file
+  cat("row", row, "of", nrow(multisensory_condition_grid), "done, nll =", multisensory_condition_nll[row], "\n", file = cv_log_file, append = TRUE)
+}
+
+# Save results as derived data
+multisensory_condition_cv_results <- multisensory_condition_grid %>% mutate(nll = multisensory_condition_nll)
+saveRDS(multisensory_condition_cv_results, here("data", "cv-multisensory-condition.rds"))

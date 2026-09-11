@@ -790,8 +790,8 @@ $$
 \begin{aligned}
 \text{error} &\sim SN2(\mu, \sigma, \nu) \\
 \mu &= \beta_0 + b_{subj} \\
-\sigma &= \gamma_0 + \gamma_1 \; \text{target} \\
-\nu &= \delta_0 + \delta_1 \; \text{target} + \delta_2 \; \text{trial\_duration}
+\sigma &= \gamma_0 + \gamma_1 \; \text{target} + b_{subj} \\
+\nu &= \delta_0 + \delta_1 \; \text{target} + \delta_2 \; \text{trial\_duration} + b_{subj}
 \end{aligned}
 $$
 
@@ -888,8 +888,8 @@ $$
 \text{error} &\sim SN2(\mu, \sigma, \nu) \\
 \mu &= \beta_0 + \beta_1 \; \text{condition} + b_{subj} \\
 \sigma &= \gamma_0 + \gamma_1 \; \text{target} + \gamma_2 \; \text{trial\_duration} + \gamma_3 \; \text{condition} \\
-&\quad + \gamma_4 \; (\text{target} \cdot \text{condition}) + \gamma_5 \; (\text{trial\_duration} \cdot \text{condition}) \\
-\nu &= \delta_0 + \delta_1 \; \text{target} + \delta_2 \; \text{trial\_duration} + \delta_3 \; \text{condition}
+&\quad + \gamma_4 \; (\text{target} \cdot \text{condition}) + \gamma_5 \; (\text{trial\_duration} \cdot \text{condition}) + b_{subj} \\
+\nu &= \delta_0 + \delta_1 \; \text{target} + \delta_2 \; \text{trial\_duration} + \delta_3 \; \text{condition} + b_{subj}
 \end{aligned}
 $$
 
@@ -987,17 +987,17 @@ This model assumes that all trials were performed using proprioceptive informati
 $$
 \begin{aligned}
 \text{error} &\sim SN2(\mu, \sigma, \nu) \\
-\mu &= \beta_0 + b_{subj} \\
+\mu &= \beta_0 + \beta_1 \; \text{condition} + b_{subj} \\
 \sigma &= \gamma_0 + \gamma_1 \; \text{target} + \gamma_2 \; \text{trial\_duration} + \gamma_3 \; \text{fb\_offset} \\
-&\quad + \gamma_4 \; (\text{trial\_duration} \cdot \text{fb\_offset}) \\
+&\quad + \gamma_4 \; (\text{trial\_duration} \cdot \text{fb\_offset}) + b_{subj} \\
 \nu &= \delta_0 + \delta_1 \; \text{target} + \delta_2 \; \text{trial\_duration} + \delta_3 \; \text{fb\_offset} + \delta_4 \; \text{fb\_time} \\
-&\quad + \delta_5 \; (\text{target} \cdot \text{fb\_offset}) + \delta_6 \; (\text{trial\_duration} \cdot \text{fb\_offset})
+&\quad + \delta_5 \; (\text{trial\_duration} \cdot \text{fb\_offset}) + b_{subj}
 \end{aligned}
 $$
 
 ```{r}
 #| label: fig-model-multisensory
-#| fig-cap: "**Multisensory model: Predicted SD of error against feedback offset by target heading (trial duration and feedback time fixed at their medians), and predictor collinearity (adjusted GVIF)**"
+#| fig-cap: "**Multisensory model: Predicted SD of error against target heading by feedback offset level, and against feedback offset by target heading, both faceted by trial duration level**"
 #| fig-subcap: true
 #| layout-ncol: 2
 #| code-summary: Fit multisensory model
@@ -1007,13 +1007,13 @@ $$
 #| fig-height: 6
 
 # Define the model
-# Winning formulas from cross-validated comparison (cv-multisensory.rds, cv-multisensory-interactions.rds)
-# Location: no shift by signed feedback offset
-multisensory_formula <- error ~ 1 + re(random = ~1|subj, level = 0)
+# Winning formulas from cross-validated comparison (cv-multisensory.rds, cv-multisensory-interactions.rds, cv-multisensory-condition.rds)
+# Location: shifts by condition, not by signed feedback offset
+multisensory_formula <- error ~ condition + re(random = ~1|subj, level = 0)
 # SD ie. noise: target + trial_duration + fb_offset, with a trial_duration:fb_offset interaction
 multisensory_sigma_formula <- ~ target + trial_duration + fb_offset + trial_duration:fb_offset + re(random = ~1|subj, level = 0)
-# Skewness: (target + trial_duration) * fb_offset, plus fb_time
-multisensory_nu_formula <- ~ (target + trial_duration) * fb_offset + fb_time + re(random = ~1|subj, level = 0)
+# Skewness: target + trial_duration + fb_offset + trial_duration:fb_offset + fb_time, dropping target:fb_offset
+multisensory_nu_formula <- ~ target + trial_duration + fb_offset + trial_duration:fb_offset + fb_time + re(random = ~1|subj, level = 0)
 # Skew-normal distribution for error
 multisensory_family <- SN2()
 
@@ -1026,6 +1026,13 @@ multisensory <- gamlss(
   data = train,
   control = gamlss_control
 )
+
+# NLL to compare against the CV-winning formula that included target:fb_offset in nu
+multisensory_nll <- -sum(dSN2(train$error,
+                               mu = fitted(multisensory, what = "mu"),
+                               sigma = fitted(multisensory, what = "sigma"),
+                               nu = fitted(multisensory, what = "nu"),
+                               log = TRUE))
 
 # Tidy labels for the collinearity predictors
 multisensory_term_labels <- c(target = "Target Heading", trial_duration = "Trial Duration",
@@ -1042,44 +1049,84 @@ multisensory_vif_table <- multisensory_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>
   mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
   tableGrob(rows = NULL, theme = ttheme_default(base_size = 16))
 
-# Predicted SD of error across fb_offset, at the representative target values together (not one at a time), with
-# trial_duration and fb_time both fixed at their medians. All 4 target values are kept in the same newdata call
-# since predict.gamlss's safe-prediction refit is unreliable when target is a single repeated constant (degenerate
-# against the target:fb_offset interaction column)
 multisensory_target_values <- c(0, 90, 180, 270)
-multisensory_pred_by_offset <- expand_grid(fb_offset = seq(-180, 180, length.out = 200),
-                                            target = multisensory_target_values,
-                                            trial_duration = median(train$trial_duration),
+multisensory_duration_levels <- round(quantile(train$trial_duration, c(0.1, 0.5, 0.9)))
+multisensory_offset_levels <- seq(-180, 180, by = 60)
+
+# Grid with target, trial_duration and fb_offset all varying, fb_time fixed at its median
+multisensory_pred_by_target <- expand_grid(target = multisensory_target_values,
+                                            trial_duration = multisensory_duration_levels,
+                                            fb_offset = multisensory_offset_levels,
                                             fb_time = median(train$fb_time),
                                             subj = factor("population")) %>%
-  mutate(pred_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response", data = train),
-         pred_nu = predict(multisensory, what = "nu", newdata = ., type = "response", data = train),
-         # True SD of the fitted SN2 error distribution, from the family's own variance function
+  mutate(pred_sigma = suppressWarnings(predict(multisensory, what = "sigma", newdata = ., type = "response", data = train)),
+         pred_nu = suppressWarnings(predict(multisensory, what = "nu", newdata = ., type = "response", data = train)),
          pred_sd = sqrt(multisensory_family$variance(mu = 0, sigma = pred_sigma, nu = pred_nu)),
-         target = factor(target))
+         duration_label = factor(trial_duration, levels = multisensory_duration_levels,
+                                  labels = paste0("Trial Duration = ", round(multisensory_duration_levels / 1000, 1), " s")),
+         offset_label = factor(fb_offset))
 
-# Plot predicted SD vs. fb_offset, by target
+# Grid with target, trial_duration and fb_offset all varying, fb_time fixed at its median
+multisensory_offset_seq <- seq(-180, 180, length.out = 200)
+multisensory_pred_by_offset <- expand_grid(target = multisensory_target_values,
+                                            trial_duration = multisensory_duration_levels,
+                                            fb_offset = multisensory_offset_seq,
+                                            fb_time = median(train$fb_time),
+                                            subj = factor("population")) %>%
+  mutate(pred_sigma = suppressWarnings(predict(multisensory, what = "sigma", newdata = ., type = "response", data = train)),
+         pred_nu = suppressWarnings(predict(multisensory, what = "nu", newdata = ., type = "response", data = train)),
+         pred_sd = sqrt(multisensory_family$variance(mu = 0, sigma = pred_sigma, nu = pred_nu)),
+         target = factor(target),
+         duration_label = factor(trial_duration, levels = multisensory_duration_levels,
+                                  labels = paste0("Trial Duration = ", round(multisensory_duration_levels / 1000, 1), " s")))
+
+# Plot predicted SD vs. target by fb_offset level, faceted by trial_duration level
+multisensory_plot_sigma_target <- multisensory_pred_by_target %>%
+  ggplot(aes(x = target, y = pred_sd, colour = offset_label)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ duration_label, ncol = 3) +
+  scale_colour_brewer(palette = "RdBu") +
+  theme_classic() +
+  theme(legend.position = "inside", legend.position.inside = c(1, 0), legend.justification = c(1, 0)) +
+  labs(x = "Target Heading", y = "Predicted SD of error", colour = "Feedback Offset")
+
+# Plot predicted SD vs. fb_offset by target, faceted by trial_duration level
 multisensory_plot_sigma_offset <- multisensory_pred_by_offset %>%
   ggplot(aes(x = fb_offset, y = pred_sd, colour = target)) +
   geom_line(linewidth = 1) +
-  scale_colour_brewer(palette = "Dark2") +
+  geom_vline(xintercept = c(-60, 60), linetype = "dashed") +
+  facet_wrap(~ duration_label, ncol = 3) +
+  scale_colour_brewer(palette = "Blues") +
   theme_classic() +
+  theme(legend.position = "inside", legend.position.inside = c(1, 0), legend.justification = c(1, 0)) +
   labs(x = "Feedback Offset", y = "Predicted SD of error", colour = "Target Heading")
 
 # KS test of residuals against the theoretical normal distribution
 multisensory_ks <- ks.test(resid(multisensory), "pnorm", mean(resid(multisensory)), sd(resid(multisensory)))
 
+multisensory_plot_sigma_target
 multisensory_plot_sigma_offset
+```
+
+```{r}
+#| label: fig-model-multisensory-vif
+#| fig-cap: "**Predictor collinearity**"
+#| code-summary: ""
+#| code-fold: true
+#| message: false
+#| fig-width: 5
+#| fig-height: 2
+
 grid.arrange(multisensory_vif_table)
 ```
 
-This model assumes that all trials were performed using proprioceptive information without discounting the reliability of the visual feedback. The residuals are even closer to a normal distribution (Kolmogorov-Smirnov test D = `r round(multisensory_ks$statistic, 3)`, p `r ifelse(multisensory_ks$p.value < 0.001, "< 0.001", paste("=", round(multisensory_ks$p.value, 3)))`).
+This model assumes that all trials were performed using proprioceptive information without discounting the reliability of the visual feedback. The uncertainity increases with task difficulty and the effect of reliability depends on the time taken to respond and offset's direction (@fig-model-multisensory-1). For lower trial durations, negative offsets show higher uncertainity (@fig-model-multisensory-2), consistent with the behavioral relationship between error and feedback offset. As trial duration increases, the multisensory model shows similar uncertainity for negative and positive offsets. The residuals are even closer to a normal distribution (Kolmogorov-Smirnov test D = `r round(multisensory_ks$statistic, 3)`, p `r ifelse(multisensory_ks$p.value < 0.001, "< 0.001", paste("=", round(multisensory_ks$p.value, 3)))`). The plateau in uncertainity at 60$^\circ$ of feedback offset is not seen in this. Could the brain be switching between segregation and integration depending on the conflict size of information received from properioception and vision?
 
 ### Hybrid Model
 
 ```{r}
 #| label: fig-model-hybrid
-#| fig-cap: "**Hybrid model: Predicted SD of error against target, and against feedback offset magnitude**"
+#| fig-cap: "**Hybrid model: Precision-weighted predicted SD of error against target heading by feedback offset level, and against feedback offset by target heading, both faceted by trial duration level**"
 #| fig-subcap: true
 #| layout-ncol: 2
 #| code-summary: Combine unisensory and multisensory model predictions
@@ -1087,87 +1134,257 @@ This model assumes that all trials were performed using proprioceptive informati
 #| message: false
 #| fig-width: 5
 #| fig-height: 6
-#| eval: false
 
-# Predict mu and sigma from both fitted models across target, by offset magnitude, and combine
-hybrid_pred_by_target <- expand_grid(target = seq(0, 360, length.out = 200),
-                                      fb_offset = c(0, 45, 90, 135, 180)) %>%
-  mutate(subj = factor("population")) %>%
-  mutate(uni_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
-                           data = train),
-         uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
-                              data = train),
-         multi_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
-                             data = train),
-         multi_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
-                                data = train)) %>%
-  # Precision-weighted model averaging
-  mutate(uni_precision = 1 / uni_sigma^2,
-         multi_precision = 1 / multi_sigma^2,
-         pred_sigma = sqrt(1 / (uni_precision + multi_precision)))
+# Same grid as the multisensory plots: target, trial_duration and fb_offset all varying, fb_time at its median
+hybrid_pred_by_target <- expand_grid(target = multisensory_target_values,
+                                      trial_duration = multisensory_duration_levels,
+                                      fb_offset = multisensory_offset_levels,
+                                      fb_time = median(train$fb_time),
+                                      condition = factor("FB", levels = levels(train$condition)),
+                                      subj = factor("population")) %>%
+  mutate(uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response", data = train),
+         uni_nu = predict(unisensory, what = "nu", newdata = ., type = "response", data = train),
+         uni_sd = sqrt(unisensory_family$variance(mu = 0, sigma = uni_sigma, nu = uni_nu)),
+         multi_sigma = suppressWarnings(predict(multisensory, what = "sigma", newdata = ., type = "response", data = train)),
+         multi_nu = suppressWarnings(predict(multisensory, what = "nu", newdata = ., type = "response", data = train)),
+         multi_sd = sqrt(multisensory_family$variance(mu = 0, sigma = multi_sigma, nu = multi_nu)),
+         # Precision-weighted combination of each model's predicted SD
+         pred_sd = sqrt(1 / (1 / uni_sd^2 + 1 / multi_sd^2)),
+         duration_label = factor(trial_duration, levels = multisensory_duration_levels,
+                                  labels = paste0("Trial Duration = ", round(multisensory_duration_levels / 1000, 1), " s")),
+         offset_label = factor(fb_offset))
 
-# Define the plot for predicted sigma vs. target, by offset magnitude
+# Define the plot for predicted SD vs. target by fb_offset level, faceted by trial_duration level
 hybrid_plot_sigma_target <- hybrid_pred_by_target %>%
-  ggplot(aes(x = target, y = pred_sigma, colour = factor(fb_offset))) +
-  geom_line() +
+  ggplot(aes(x = target, y = pred_sd, colour = offset_label)) +
+  geom_line(linewidth = 1) +
+  facet_wrap(~ duration_label, ncol = 3) +
+  scale_colour_brewer(palette = "RdBu") +
+  theme_classic() +
+  theme(legend.position = "inside", legend.position.inside = c(1, 0), legend.justification = c(1, 0)) +
+  labs(x = "Target Heading", y = "Predicted SD of error", colour = "Feedback Offset")
+
+# Same grid as the multisensory plots: target, trial_duration and fb_offset all varying, fb_time at its median
+hybrid_pred_by_offset <- expand_grid(target = multisensory_target_values,
+                                      trial_duration = multisensory_duration_levels,
+                                      fb_offset = multisensory_offset_seq,
+                                      fb_time = median(train$fb_time),
+                                      condition = factor("FB", levels = levels(train$condition)),
+                                      subj = factor("population")) %>%
+  mutate(uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response", data = train),
+         uni_nu = predict(unisensory, what = "nu", newdata = ., type = "response", data = train),
+         uni_sd = sqrt(unisensory_family$variance(mu = 0, sigma = uni_sigma, nu = uni_nu)),
+         multi_sigma = suppressWarnings(predict(multisensory, what = "sigma", newdata = ., type = "response", data = train)),
+         multi_nu = suppressWarnings(predict(multisensory, what = "nu", newdata = ., type = "response", data = train)),
+         multi_sd = sqrt(multisensory_family$variance(mu = 0, sigma = multi_sigma, nu = multi_nu)),
+         # Precision-weighted combination of each model's predicted SD
+         pred_sd = sqrt(1 / (1 / uni_sd^2 + 1 / multi_sd^2)),
+         target = factor(target),
+         duration_label = factor(trial_duration, levels = multisensory_duration_levels,
+                                  labels = paste0("Trial Duration = ", round(multisensory_duration_levels / 1000, 1), " s")))
+
+# Define the plot for predicted SD vs. fb_offset by target, faceted by trial_duration level
+hybrid_plot_sigma_offset <- hybrid_pred_by_offset %>%
+  ggplot(aes(x = fb_offset, y = pred_sd, colour = target)) +
+  geom_line(linewidth = 1) +
+  geom_vline(xintercept = c(-60, 60), linetype = "dashed") +
+  facet_wrap(~ duration_label, ncol = 3) +
   scale_colour_brewer(palette = "Blues") +
   theme_classic() +
-  labs(x = "Target Heading", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "|Feedback Offset|")
-
-# Predict mu and sigma from both fitted models across offset magnitude, by target, and combine
-hybrid_pred_by_offset <- expand_grid(fb_offset = seq(0, 180, length.out = 200),
-                                      target = c(0, 90, 180, 270, 360)) %>%
-  mutate(subj = factor("population")) %>%
-  mutate(uni_mu = predict(unisensory, what = "mu", newdata = ., type = "response",
-                           data = train),
-         uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response",
-                              data = train),
-         multi_mu = predict(multisensory, what = "mu", newdata = ., type = "response",
-                             data = train),
-         multi_sigma = predict(multisensory, what = "sigma", newdata = ., type = "response",
-                                data = train)) %>%
-  # Precision-weighted model averaging
-  mutate(uni_precision = 1 / uni_sigma^2,
-         multi_precision = 1 / multi_sigma^2,
-         pred_sigma = sqrt(1 / (uni_precision + multi_precision)))
-
-# Define the plot for predicted sigma vs. offset magnitude, by target
-hybrid_plot_sigma_offset <- hybrid_pred_by_offset %>%
-  ggplot(aes(x = fb_offset, y = pred_sigma, colour = factor(target))) +
-  geom_line() +
-  geom_vline(xintercept = 60, linetype = "dashed") +
-  scale_colour_brewer(palette = "Oranges") +
-  theme_classic() +
-  labs(x = "|Feedback Offset|", y = expression(paste("Predicted SD of error (", sigma, ")")), colour = "Target Heading")
+  theme(legend.position = "inside", legend.position.inside = c(1, 0), legend.justification = c(1, 0)) +
+  labs(x = "Feedback Offset", y = "Predicted SD of error", colour = "Target Heading")
 
 hybrid_plot_sigma_target
 hybrid_plot_sigma_offset
 
-# Predict mu and sigma from both fitted models on test
-hybrid_test_pred <- test %>%
-  mutate(uni_mu = predict(unisensory, what = "mu",
-                           newdata = test,
-                           type = "response", data = train),
-         uni_sigma = predict(unisensory, what = "sigma",
-                              newdata = test,
-                              type = "response", data = train),
-         multi_mu = predict(multisensory, what = "mu",
-                             newdata = test,
-                             type = "response", data = train),
-         multi_sigma = predict(multisensory, what = "sigma",
-                                newdata = test,
-                                type = "response", data = train)) %>%
-  # Precision-weighted model averaging
-  mutate(uni_precision = 1 / uni_sigma^2,
-         multi_precision = 1 / multi_sigma^2,
-         pred_sigma = sqrt(1 / (uni_precision + multi_precision)),
-         pred_mu = (uni_mu * uni_precision + multi_mu * multi_precision) / (uni_precision + multi_precision))
+# Per-trial predicted SD beyond the -60 to 60 feedback offset band, where uncertainity behaviorally plateaus
+hybrid_offset_diff_data <- train %>%
+  filter(fb_offset < -60 | fb_offset > 60) %>%
+  mutate(multi_sigma = suppressWarnings(predict(multisensory, what = "sigma", newdata = ., type = "response", data = train)),
+         multi_nu = suppressWarnings(predict(multisensory, what = "nu", newdata = ., type = "response", data = train)),
+         multisensory_sd = sqrt(multisensory_family$variance(mu = 0, sigma = multi_sigma, nu = multi_nu)),
+         uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response", data = train),
+         uni_nu = predict(unisensory, what = "nu", newdata = ., type = "response", data = train),
+         uni_sd = sqrt(unisensory_family$variance(mu = 0, sigma = uni_sigma, nu = uni_nu)),
+         hybrid_sd = sqrt(1 / (1 / uni_sd^2 + 1 / multisensory_sd^2)),
+         diff_sd = hybrid_sd - multisensory_sd)
 
-# Total negative log-likelihood per test subject
-hybrid_nll_by_subj <- hybrid_test_pred %>%
-  group_by(subj) %>%
-  summarise(nll = -sum(dNO(error, mu = pred_mu, sigma = pred_sigma, log = TRUE)))
+# Paired mean difference (hybrid - multisensory) within the band, as mean +/- 2 SE
+hybrid_offset_diff_mean <- mean(hybrid_offset_diff_data$diff_sd)
+hybrid_offset_diff_se <- sd(hybrid_offset_diff_data$diff_sd) / sqrt(nrow(hybrid_offset_diff_data))
 ```
 
-This model combines the unisensory and multisensory models' predictions by weighting them according to their precisions [@Noppeney_2021]. The combined predicted SD of error is lower than either individual model's prediction against target (@fig-model-hybrid-1) and against offset magnitude (@fig-model-hybrid-2). The hybrid model has reduced uncertainity as well.
+This model combines the unisensory and multisensory models' predictions by weighting them according to their precisions [@Noppeney_2021]. The combined predicted uncertainity is lower than either individual model's prediction against target (@fig-model-hybrid-1) and is more sensitive to reliability around zero feedback offset (@fig-model-hybrid-2). Beyond the -60$^\circ$ to 60$^\circ$ feedback offset range, where uncertainity behaviorally plateaus, the hybrid model's predicted uncertainity is on average `r round(abs(hybrid_offset_diff_mean), 3)` $\pm$ `r round(2 * hybrid_offset_diff_se, 3)`$^\circ$ lower than the multisensory model's.
+
+### Model Comparison
+
+```{r}
+#| label: fig-model-comparison
+#| fig-cap: "**Median test NLL (across subjects) for the unisensory, naive multisensory, multisensory and hybrid models, faceted by signed feedback offset (conflict size)**"
+#| code-summary: Compare models on held-out test NLL, by conflict size
+#| code-fold: true
+#| message: false
+#| fig-width: 7
+#| fig-height: 5
+
+# Per-row held-out test-set NLL for a gamlss model fit with family SN2
+test_nll_by_row <- function(model) {
+  pred_mu <- suppressWarnings(predict(model, what = "mu", newdata = test, type = "response", data = train))
+  pred_sigma <- suppressWarnings(predict(model, what = "sigma", newdata = test, type = "response", data = train))
+  pred_nu <- suppressWarnings(predict(model, what = "nu", newdata = test, type = "response", data = train))
+  -dSN2(test$error, mu = pred_mu, sigma = pred_sigma, nu = pred_nu, log = TRUE)
+}
+
+# Hybrid combines unisensory and multisensory sigma/nu via precision weighting, mu from multisensory
+hybrid_test_nll_by_row <- {
+  uni_sigma <- predict(unisensory, what = "sigma", newdata = test, type = "response", data = train)
+  uni_nu <- predict(unisensory, what = "nu", newdata = test, type = "response", data = train)
+  uni_sd <- sqrt(unisensory_family$variance(mu = 0, sigma = uni_sigma, nu = uni_nu))
+  multi_mu <- suppressWarnings(predict(multisensory, what = "mu", newdata = test, type = "response", data = train))
+  multi_sigma <- suppressWarnings(predict(multisensory, what = "sigma", newdata = test, type = "response", data = train))
+  multi_nu <- suppressWarnings(predict(multisensory, what = "nu", newdata = test, type = "response", data = train))
+  multi_sd <- sqrt(multisensory_family$variance(mu = 0, sigma = multi_sigma, nu = multi_nu))
+  combined_sd <- sqrt(1 / (1 / uni_sd^2 + 1 / multi_sd^2))
+  -dNO(test$error, mu = multi_mu, sigma = combined_sd, log = TRUE)
+}
+
+# 60 degree signed fb_offset bins, spanning the full range
+conflict_bin_breaks <- seq(-180, 180, by = 60)
+conflict_bin_labels <- paste(head(conflict_bin_breaks, -1), tail(conflict_bin_breaks, -1), sep = " to ")
+
+# Per-trial NLL for each model on FB trials only, binned by signed fb_offset, summed per subject within each bin
+model_comparison_by_conflict_subj <- tibble(
+  subj = rep(test$subj, times = 4),
+  condition = rep(test$condition, times = 4),
+  fb_offset = rep(test$fb_offset, times = 4),
+  Model = rep(c("Unisensory", "Naive Multisensory", "Multisensory", "Hybrid"), each = nrow(test)),
+  nll = c(test_nll_by_row(unisensory), test_nll_by_row(naive_multisensory),
+          test_nll_by_row(multisensory), hybrid_test_nll_by_row)
+) %>%
+  filter(condition == "FB") %>%
+  mutate(conflict_bin = cut(fb_offset, breaks = conflict_bin_breaks, include.lowest = TRUE, labels = conflict_bin_labels),
+         Model = factor(Model, levels = c("Unisensory", "Naive Multisensory", "Multisensory", "Hybrid"))) %>%
+  group_by(subj, conflict_bin, Model) %>%
+  summarise(nll = sum(nll), .groups = "drop")
+
+# Median across subjects, per model per conflict bin
+model_comparison_by_conflict <- model_comparison_by_conflict_subj %>%
+  group_by(conflict_bin, Model) %>%
+  summarise(median_nll = median(nll), .groups = "drop")
+
+# Short model labels to keep the faceted x-axis readable
+model_short_labels <- c("Unisensory" = "Uni", "Naive Multisensory" = "Naive", "Multisensory" = "Multi", "Hybrid" = "Hybrid")
+
+# Plot NLL by model, faceted by conflict bin: per-subject lines with the across-subject median overlaid
+model_comparison_plot <- model_comparison_by_conflict_subj %>%
+  mutate(Model = factor(model_short_labels[Model], levels = model_short_labels)) %>%
+  ggplot(aes(x = Model, y = nll)) +
+  geom_point(aes(colour = subj)) +
+  geom_line(aes(colour = subj, group = subj), alpha = 0.4) +
+  geom_line(data = model_comparison_by_conflict %>% mutate(Model = factor(model_short_labels[Model], levels = model_short_labels)),
+            aes(y = median_nll, group = 1), linewidth = 1) +
+  geom_point(data = model_comparison_by_conflict %>% mutate(Model = factor(model_short_labels[Model], levels = model_short_labels)),
+             aes(y = median_nll), size = 2.5) +
+  facet_wrap(~ conflict_bin, nrow = 2, scales = "free_y") +
+  scale_colour_brewer(palette = "Dark2") +
+  theme_classic() +
+  theme(legend.position = "none") +
+  labs(x = NULL, y = "Test NLL")
+
+model_comparison_plot
+```
+
+The hybrid model has no BIC of its own since it is a precision-weighted combination of the already-fit unisensory and multisensory models rather than a separately fit likelihood. The multisensory model has both the lowest training BIC and the lowest median test NLL, making it the best-performing model overall. The hybrid model is compared alongside it in the behavioral validation below despite its higher test NLL, since precision-weighted cue combination is a theoretically motivated benchmark [@Noppeney_2021] rather than a model chosen purely for fit.
+
+### Behavioral Validation
+
+```{r}
+#| label: behavioral-validation
+#| code-summary: Validate multisensory and hybrid predictions against the behavioral relationships found for accuracy and confidence
+#| code-fold: true
+#| message: false
+
+# Test trials with each model's predicted SD per trial
+validation_test_data <- test %>%
+  mutate(multi_sigma = suppressWarnings(predict(multisensory, what = "sigma", newdata = ., type = "response", data = train)),
+         multi_nu = suppressWarnings(predict(multisensory, what = "nu", newdata = ., type = "response", data = train)),
+         multisensory_pred_sd = sqrt(multisensory_family$variance(mu = 0, sigma = multi_sigma, nu = multi_nu)),
+         uni_sigma = predict(unisensory, what = "sigma", newdata = ., type = "response", data = train),
+         uni_nu = predict(unisensory, what = "nu", newdata = ., type = "response", data = train),
+         uni_sd = sqrt(unisensory_family$variance(mu = 0, sigma = uni_sigma, nu = uni_nu)),
+         hybrid_pred_sd = sqrt(1 / (1 / uni_sd^2 + 1 / multisensory_pred_sd^2)))
+
+test_subjs <- unique(validation_test_data$subj)
+
+# Bootstrapped median regression slopes of pred_sd_col ~ target and ~ |error| within the same resample,
+# and their paired difference (target slope - |error| slope), each as a [lo, hi] CI
+validation_slope_diff <- function(pred_sd_col, data) {
+  b <- boot(test_subjs, function(d, i) {
+    samp <- map_dfr(d[i], ~ data %>% filter(subj == .x))
+    target_slope <- coef(rq(reformulate("target", response = pred_sd_col), tau = 0.5, data = samp))[[2]]
+    error_slope <- coef(rq(reformulate("abs(error)", response = pred_sd_col), tau = 0.5, data = samp))[[2]]
+    c(target = target_slope, error = error_slope, diff = target_slope - error_slope)
+  }, R = R_boot)
+  list(target = boot.ci(b, type = "perc", index = 1)$percent[4:5],
+       error = boot.ci(b, type = "perc", index = 2)$percent[4:5],
+       diff = boot.ci(b, type = "perc", index = 3)$percent[4:5])
+}
+
+multisensory_slopes <- validation_slope_diff("multisensory_pred_sd", validation_test_data)
+hybrid_slopes <- validation_slope_diff("hybrid_pred_sd", validation_test_data)
+
+# Format a [lo, hi] CI pair as a display string
+format_ci <- function(ci) paste0("[", round(ci[1], 3), ", ", round(ci[2], 3), "]")
+
+# The paired slope difference (target - |error|), computed per model on the test set
+validation_results <- tibble(
+  Model = c("Multisensory", "Hybrid"),
+  `Slope difference (target - |error|)` = c(format_ci(multisensory_slopes$diff), format_ci(hybrid_slopes$diff))
+)
+
+validation_table <- validation_results %>%
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 14))
+
+grid.arrange(validation_table)
+```
+
+Uncertainity was expected to track task difficulty (`target`) rather than actual performance (`|error|`), matching the behavioral relationship found for subjective confidence. Both models' slope differences include 0, so neither model's predicted uncertainity is distinguishably more sensitive to task difficulty than to actual performance on the held-out test set, unlike subjective confidence. This is a limitation of both models.
+
+### Bayes-Consistency Check
+
+```{r}
+#| label: bayes-consistency
+#| code-summary: Check whether the hybrid model's implied vision weight shifts with feedback reliability
+#| code-fold: true
+#| message: false
+
+# Implied precision-weight placed on the multisensory (vision-informed) estimate, all test trials
+vision_weight_data <- validation_test_data %>%
+  mutate(uni_precision = 1 / uni_sd^2,
+         multi_precision = 1 / multisensory_pred_sd^2,
+         vision_weight = multi_precision / (uni_precision + multi_precision))
+
+# Bayes-optimal integration predicts this weight decreases as feedback becomes less reliable (|fb_offset| increases)
+vision_weight_slope_boot <- boot(test_subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ vision_weight_data %>% filter(subj == .x))
+  coef(rq(vision_weight ~ abs(fb_offset), tau = 0.5, data = samp))[["abs(fb_offset)"]]
+}, R = R_boot)
+vision_weight_slope_ci <- boot.ci(vision_weight_slope_boot, type = "perc")$percent[4:5]
+
+# Does the slope of vision_weight ~ |fb_offset| change inside vs. outside the 60 degree band?
+vision_weight_binned_data <- vision_weight_data %>%
+  mutate(offset_bin = ifelse(abs(fb_offset) <= 60, "near_zero", "outside"))
+
+vision_weight_bin_slope_boot <- boot(test_subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ vision_weight_binned_data %>% filter(subj == .x))
+  near_slope <- coef(rq(vision_weight ~ abs(fb_offset), tau = 0.5, data = samp %>% filter(offset_bin == "near_zero")))[["abs(fb_offset)"]]
+  outside_slope <- coef(rq(vision_weight ~ abs(fb_offset), tau = 0.5, data = samp %>% filter(offset_bin == "outside")))[["abs(fb_offset)"]]
+  c(near = near_slope, outside = outside_slope, diff = near_slope - outside_slope)
+}, R = R_boot)
+vision_weight_near_ci <- boot.ci(vision_weight_bin_slope_boot, type = "perc", index = 1)$percent[4:5]
+vision_weight_outside_ci <- boot.ci(vision_weight_bin_slope_boot, type = "perc", index = 2)$percent[4:5]
+vision_weight_bin_diff_ci <- boot.ci(vision_weight_bin_slope_boot, type = "perc", index = 3)$percent[4:5]
+```
+
+Bayes-optimal cue integration predicts that the weight placed on the more reliable cue should increase as its reliability improves. The bootstrapped 95% CI for the median regression slope of the hybrid model's implied vision weight against `|fb_offset|` (unreliability) is [`r round(vision_weight_slope_ci[1], 4)`, `r round(vision_weight_slope_ci[2], 4)`]. Splitting at the 60$^\circ$ landmark seen earlier in the behavioral uncertainty plateau, the slope within the band is [`r round(vision_weight_near_ci[1], 4)`, `r round(vision_weight_near_ci[2], 4)`] and beyond it is [`r round(vision_weight_outside_ci[1], 4)`, `r round(vision_weight_outside_ci[2], 4)`], with a difference of [`r round(vision_weight_bin_diff_ci[1], 4)`, `r round(vision_weight_bin_diff_ci[2], 4)`].
 
