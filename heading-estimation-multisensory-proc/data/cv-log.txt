@@ -1,0 +1,18 @@
+CV run started 2026-09-12 02:13:22 
+fold 1 start 2026-09-12 02:13:22 
+fold 1 p_common 0.9 
+fold 1 done 2026-09-12 02:22:15 
+fold 2 start 2026-09-12 02:22:15 
+fold 2 unisensory failed: nlminb problem, convergence error code = 1
+  message = false convergence (8) 
+fold 2 done 2026-09-12 03:05:47 
+fold 3 start 2026-09-12 03:05:47 
+fold 3 p_common 0.9 
+fold 3 done 2026-09-12 03:47:35 
+fold 4 start 2026-09-12 03:47:35 
+fold 4 p_common 0.9 
+fold 4 done 2026-09-12 04:45:39 
+fold 5 start 2026-09-12 04:45:39 
+fold 5 p_common 0.9 
+fold 5 done 2026-09-12 05:16:33 
+CV run finished 2026-09-12 05:16:33 

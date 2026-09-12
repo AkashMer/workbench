@@ -58,15 +58,6 @@ library(lemon)
 
 # Pin the here() root explicitly
 here::i_am("scripts/heading-estimation-multisensory-proc.qmd")
-
-# Custom theme for tables
-dark_header_theme <- function(base_size) {
-  ttheme_default(
-    base_size = base_size,
-    core = list(bg_params = list(fill = "white", col = "grey80")),
-    colhead = list(fg_params = list(col = "white", fontface = "bold"), bg_params = list(fill = "grey30"))
-  )
-}
 ```
 
 ```{r}
@@ -178,7 +169,7 @@ plot_target <- data %>%
   theme_bw() +
   theme(
     axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
+    axis.text = element_text(size = 9)
   )
 
 # Display distribution of fb_offset which was drawn from two components
@@ -263,11 +254,7 @@ plot_A <- ggplot(respond_boot_by_bin, aes(x = target_bin, y = mean)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "Mean(respond) with 95% bootstrap CI")
 
 # Compute the median of error per target bins
@@ -290,11 +277,7 @@ plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = median)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "Median(error) with 95% bootstrap CI")
 
 plot_A
@@ -338,7 +321,7 @@ $$
 
 ```{r}
 #| label: fig-error-by-condition-offset
-#| fig-cap: "**Median error by condition and by visual feedback offset**"
+#| fig-cap: "**Median error by condition and by visual feedback offset magnitude**"
 #| fig-subcap: true
 #| layout-ncol: 2
 #| code-summary: ""
@@ -396,11 +379,7 @@ offset_median_boot_by_bin <- fb_data %>%
 plot_D <- ggplot(offset_median_boot_by_bin, aes(x = offset_bin, y = median)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Visual feedback offset", y = "Median(error) with 95% bootstrap CI")
 
 plot_C
@@ -434,7 +413,7 @@ offset_mirror_median_diff_ci <- boot.ci(offset_mirror_median_diff_boot, type = "
 
 ```{r}
 #| label: fig-error-variance
-#| fig-cap: "**SD of error across target heading bins, condition, and visual feedback offset**"
+#| fig-cap: "**SD of error across target heading bins, condition, and visual feedback offset magnitude**"
 #| fig-subcap: true
 #| layout-ncol: 3
 #| code-summary: ""
@@ -462,11 +441,7 @@ plot_E <- ggplot(error_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "SD(error) with 95% bootstrap CI")
 
 # Does error's SD differ between noFB and FB conditions?
@@ -510,11 +485,7 @@ offset_sd_boot_by_bin <- fb_data %>%
 plot_G <- ggplot(offset_sd_boot_by_bin, aes(x = offset_bin, y = sd)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Visual feedback offset", y = "SD(error) with 95% bootstrap CI")
 
 plot_E
@@ -590,11 +561,7 @@ plot_error_by_duration <- data %>%
     ggplot(aes(x = duration_bin, y = median)) +
     geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
     theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
     labs(x = "trial duration (sec)", y = "Median(error) with 95% bootstrap CI")
 
 # Compute the SD of error per trial_duration bin
@@ -616,11 +583,7 @@ plot_error_sd_by_duration <- data %>%
     ggplot(aes(x = duration_bin, y = sd)) +
     geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
     theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
     labs(x = "trial duration (sec)", y = "SD(error) with 95% bootstrap CI")
 
 plot_error_by_duration
@@ -639,7 +602,7 @@ duration_slope_ci <- boot.ci(duration_slope_boot, type = "perc")$percent[4:5]
 
 ```{r}
 #| label: fig-error-by-fb-time
-#| fig-cap: "**Median and SD of error across different times (deciles) at which the feedback was displayed**"
+#| fig-cap: "**Median and SD of error across different times (deciles) the feedback was displayed**"
 #| fig-subcap: true
 #| layout-ncol: 2
 #| code-summary: ""
@@ -675,11 +638,7 @@ plot_error_by_fb_time <- fb_data %>%
     ggplot(aes(x = fb_time_bin, y = median)) +
     geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
     theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
     labs(x = "feedback display time (sec)", y = "Median(error) with 95% bootstrap CI")
 
 # Compute the SD of error per fb_time bin
@@ -701,11 +660,7 @@ plot_error_sd_by_fb_time <- fb_data %>%
     ggplot(aes(x = fb_time_bin, y = sd)) +
     geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
     theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
     labs(x = "feedback display time (sec)", y = "SD(error) with 95% bootstrap CI")
 
 plot_error_by_fb_time
@@ -756,11 +711,7 @@ plot_H <- ggplot(conf_median_boot_by_bin, aes(x = target_bin, y = median)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "Median(conf) with 95% bootstrap CI")
 
 # Does subjective confidence (conf) grow with target (task difficulty)?
@@ -791,11 +742,7 @@ plot_I <- ggplot(conf_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
   scale_x_discrete(breaks = target_bin_ticks) +
   theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Target Heading", y = "SD(conf) with 95% bootstrap CI")
 
 plot_H
@@ -869,7 +816,7 @@ unisensory_vif_table <- unisensory_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>%
   mutate(term = unisensory_term_labels[term]) %>%
   rename(Term = term, `Adjusted GVIF` = `GVIF^(1/(2*Df))`) %>%
   mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 16))
 
 # 10th/30th/50th/70th/90th percentile trial_duration, one predicted SD curve each
 duration_levels <- quantile(data$trial_duration, probs = c(0.1, 0.3, 0.5, 0.7, 0.9))
@@ -891,8 +838,7 @@ unisensory_sd_plot <- unisensory_grid %>%
   geom_line() +
   scale_color_viridis_d(direction = -1) +
   labs(x = "Target Heading", y = "Predicted SD of error", color = "Trial Duration (sec)") +
-  theme_bw() +
-  theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
+  theme_bw()
 
 unisensory_sd_plot
 grid.arrange(unisensory_vif_table)
@@ -955,7 +901,7 @@ visual_only_vif_table <- visual_only_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>%
   mutate(term = visual_only_term_labels[term]) %>%
   rename(Term = term, `Adjusted GVIF` = `GVIF^(1/(2*Df))`) %>%
   mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(30))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 22))
 
 # 5 evenly-spaced target levels for hue, 5 trial_duration quantile levels for faceting
 target_levels <- c(20, 80, 140, 200, 260)
@@ -991,8 +937,7 @@ cue_combination_plot <- cue_combination_grid %>%
   facet_wrap(~trial_duration) +
   scale_color_viridis_d(direction = -1) +
   labs(x = "Feedback Offset", y = "Predicted SD of error", color = "Target Heading") +
-  theme_bw() +
-  theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
+  theme_bw()
 
 reposition_legend(cue_combination_plot, "center", panel = "panel-3-2")
 grid.arrange(visual_only_vif_table)
@@ -1066,7 +1011,7 @@ multisensory_vif_table <- multisensory_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>
   mutate(term = multisensory_term_labels[term]) %>%
   rename(Term = term, `Adjusted GVIF` = `GVIF^(1/(2*Df))`) %>%
   mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(30))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 22))
 
 # 5 trial_duration quantile levels for faceting, viewAmount fixed at median
 multisensory_duration_levels <- quantile(fb_data$trial_duration, probs = c(0.1, 0.3, 0.5, 0.7, 0.9))
@@ -1097,8 +1042,7 @@ multisensory_plot <- multisensory_grid %>%
   facet_wrap(~trial_duration) +
   scale_color_viridis_d(direction = -1) +
   labs(x = "Feedback Offset", y = "Predicted SD of error", color = "Target Heading") +
-  theme_bw() +
-  theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
+  theme_bw()
 
 reposition_legend(multisensory_plot, "center", panel = "panel-3-2")
 grid.arrange(multisensory_vif_table)
@@ -1114,7 +1058,7 @@ The predicted uncertainty of this model behaves similarly to the cue combination
 #| fig-subcap: true
 #| layout-ncol: 2
 #| fig-height: 2
-#| code-summary: ""
+#| code-summary: Compare models on BIC and 5-fold CV RMSE
 #| code-fold: true
 #| message: false
 
@@ -1127,7 +1071,7 @@ model_comparison_bic <- tibble(
   )
 ) %>%
   arrange(BIC) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 16))
 
 # Raw per-fold RMSE from scripts/model-cv.R, computed offline overnight
 cv_results <- readRDS(here("data", "cv-results.rds"))
@@ -1151,7 +1095,7 @@ cv_summary <- cv_results %>%
   ) %>%
   dplyr::select(model, rmse) %>%
   rename(Model = model, `RMSE (mean ± 2SE)` = rmse) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 16))
 
 grid.arrange(model_comparison_bic)
 grid.arrange(cv_summary)
@@ -1228,7 +1172,7 @@ target_error_table <- tibble(
   Model = validation_models,
   `Slope (predicted SD ~ |error|)` = map_chr(validation_sd_cols, ~ format_ci(validation_slope(.x, "abs(error)", target_error_data)))
 ) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 16))
 
 # Slope of predicted |error| against viewAmount, Naive Unisensory and Cue Combination
 view_amount_table <- tibble(
@@ -1238,7 +1182,7 @@ view_amount_table <- tibble(
     ~ format_ci(validation_view_amount_slope(.x, view_amount_data))
   )
 ) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(18))
+  tableGrob(rows = NULL, theme = ttheme_default(base_size = 16))
 
 # Multisensory predicted |error| across viewAmount (10th/median/90th percentile), by 6 feedback offset levels
 multi_view_amount_grid <- expand_grid(
@@ -1260,8 +1204,7 @@ multi_view_amount_plot <- multi_view_amount_grid %>%
   geom_point() +
   scale_color_brewer(palette = "RdBu") +
   labs(x = "View Amount", y = "Predicted |error|", color = "Feedback Offset") +
-  theme_bw() +
-  theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
+  theme_bw()
 
 # Both validation tables stacked into one grob
 validation_tables <- arrangeGrob(target_error_table, view_amount_table, nrow = 2)
@@ -1310,4 +1253,5 @@ title(paste0("Skew-t, BIC = ", round(AIC(family_sst, k = log(nobs(family_sst))))
 wp(family_jsu, ylim.all = 0.3)
 title(paste0("Johnson's Unbounded Support, BIC = ", round(AIC(family_jsu, k = log(nobs(family_jsu))))))
 ```
+
 

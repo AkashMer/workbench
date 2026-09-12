@@ -55,8 +55,6 @@ multisensory_sigma_formula <- ~ pbc(target) + pb(trial_duration) + pb(fb_offset)
 
 # Define the distribution family for error
 family <- SST()
-# Define the method used for searching stable coefficients
-method <- mixed(20, 100)
 
 # Precision-weighted Bayesian-optimal combination of unisensory + visual-only predicted mu/sigma
 classical_predict <- function(uni_mu, uni_sigma, vis_mu, vis_sigma) {
@@ -118,7 +116,7 @@ for (fold_id in seq_len(k)) {
   uni_fit <- tryCatch(
     gamlss(
       formula = unisensory_mu_formula, sigma.formula = unisensory_sigma_formula,
-      family = family, data = fit_data_full, method = method,
+      family = family, data = fit_data_full, method = mixed(20, 100),
       control = gamlss.control(n.cyc = 300, trace = FALSE)
     ),
     error = function(e) {
@@ -131,7 +129,7 @@ for (fold_id in seq_len(k)) {
   vis_fit <- tryCatch(
     gamlss(
       formula = visual_only_mu_formula, sigma.formula = visual_only_sigma_formula,
-      family = family, data = fit_data, method = method,
+      family = family, data = fit_data, method = mixed(20, 100),
       control = gamlss.control(n.cyc = 300, trace = FALSE)
     ),
     error = function(e) {
@@ -144,7 +142,7 @@ for (fold_id in seq_len(k)) {
   multi_fit <- tryCatch(
     gamlss(
       formula = multisensory_mu_formula, sigma.formula = multisensory_sigma_formula,
-      family = family, data = fit_data, method = method,
+      family = family, data = fit_data, method = mixed(20, 100),
       control = gamlss.control(n.cyc = 300, trace = FALSE)
     ),
     error = function(e) {
@@ -164,14 +162,15 @@ for (fold_id in seq_len(k)) {
 
   # Classical + smooth RMSE, combine unisensory + visual-only predictions on held-out FB trials
   if (!is.null(uni_fit) && !is.null(vis_fit)) {
-    uni_pred_held <- predictAll(uni_fit, newdata = held_data, type = "response", data = fit_data_full, output = "list")
+    # uni_fit trained without the fold column, drop it here so newdata columns match
+    uni_pred_held <- predictAll(uni_fit, newdata = held_data %>% select(-fold), type = "response", data = fit_data_full, output = "list")
     vis_pred_held <- predictAll(vis_fit, newdata = held_data, type = "response", data = fit_data, output = "list")
 
     classical_pred <- classical_predict(uni_pred_held$mu, uni_pred_held$sigma, vis_pred_held$mu, vis_pred_held$sigma)
     fold_rmse$rmse[fold_rmse$model == "classical"] <- rmse(classical_pred, held_data$error)
 
     # p_common grid-searched on this fold's training predictions
-    uni_pred_fit <- predictAll(uni_fit, newdata = fit_data, type = "response", data = fit_data_full, output = "list")
+    uni_pred_fit <- predictAll(uni_fit, newdata = fit_data %>% select(-fold), type = "response", data = fit_data_full, output = "list")
     vis_pred_fit <- predictAll(vis_fit, newdata = fit_data, type = "response", data = fit_data, output = "list")
 
     p_common <- fit_p_common(
@@ -195,16 +194,6 @@ for (fold_id in seq_len(k)) {
   cat("fold", fold_id, "done", format(Sys.time()), "\n", file = log_file, append = TRUE)
 }
 
-# Mean +/- 2SE across converged folds per model
-summary_rmse <- results %>%
-  group_by(model) %>%
-  summarise(
-    mean_rmse = mean(rmse, na.rm = TRUE),
-    se_rmse = sd(rmse, na.rm = TRUE) / sqrt(sum(!is.na(rmse))),
-    n_folds = sum(!is.na(rmse)),
-    .groups = "drop"
-  ) %>%
-  mutate(ci_low = mean_rmse - 2 * se_rmse, ci_high = mean_rmse + 2 * se_rmse)
-
-saveRDS(list(fold_rmse = results, summary = summary_rmse), file.path(data_path, "cv-results.rds"))
+# Save results as R object
+saveRDS(results, file.path(data_path, "cv-results.rds"))
 cat("CV run finished", format(Sys.time()), "\n", file = log_file, append = TRUE)
