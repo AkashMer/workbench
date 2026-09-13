@@ -1,4 +1,4 @@
-# Untitled
+# Beyond Cue Combination for Multisensory Heading Estimation in VR
 
 ## Data Source
 
@@ -13,8 +13,9 @@
 ## Setup Instructions
 
 1. Clone this repo locally.
-2. Make sure you have R version 4.4.3 installed.
-3. From `heading-estimation-multisensory-proc/`, in an R console, run `renv::restore(project = "scripts")` to recreate the package library.
-4. Run `quarto render scripts/heading-estimation-multisensory-proc.qmd` to recreate the post.
+2. Make sure you have R version 4.6.1 installed.
+3. From `heading-estimation-multisensory-proc/`, in an R console, run `renv::restore()` to recreate the package library.
+4. Run `Rscript scripts/model-cv.R` first to generate `data/cv-results.rds` (5-fold CV, takes several hours; the qmd's Model Comparison section reads this file).
+5. Run `quarto render scripts/heading-estimation-multisensory-proc.qmd` to recreate the post.
 
-*Note*: `explore.R` - Personal scratchpad for data exploration.
+*Note*: `explore.R` - Personal scratchpad for data exploration and model development.

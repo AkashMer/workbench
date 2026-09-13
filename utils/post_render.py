@@ -1,4 +1,5 @@
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -20,3 +21,12 @@ for md_file in output_dir.rglob('*.md'):
     if f'{slug}_files/' in content and target not in content:
         content = content.replace(f'{slug}_files/', target)
         md_file.write_text(content, encoding='utf-8')
+
+# Posts with _quarto.yml above the qmd (e.g. renv/rig at the slug root)
+# mirror a scripts/ subfolder into the output dir. Flatten it so the post
+# lands directly in output_dir, matching every other post's layout
+scripts_subdir = output_dir / 'scripts'
+if scripts_subdir.is_dir():
+    for item in scripts_subdir.iterdir():
+        shutil.move(str(item), str(output_dir / item.name))
+    scripts_subdir.rmdir()

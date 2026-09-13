@@ -1,8 +1,9 @@
 ---
-title: Undecided
+title: Beyond Cue Combination for Multisensory Heading Estimation in VR
 engine: knitr
-# format: gfm
+format: gfm
 from: markdown+wikilinks_title_after_pipe
+bibliography: heading-estimation-multisensory-proc.bib
 link-citations: true
 link-bibliography: true
 execute:
@@ -53,19 +54,28 @@ library(boot)
 library(quantreg)
 library(rmcorr)
 library(gamlss)
-library(gridExtra)
 library(lemon)
+library(patchwork)
+library(gt)
 
 # Pin the here() root explicitly
 here::i_am("scripts/heading-estimation-multisensory-proc.qmd")
 
 # Custom theme for tables
-dark_header_theme <- function(base_size) {
-  ttheme_default(
-    base_size = base_size,
-    core = list(bg_params = list(fill = "white", col = "grey80")),
-    colhead = list(fg_params = list(col = "white", fontface = "bold"), bg_params = list(fill = "grey30"))
-  )
+dark_header_gt <- function(data, size = 20) {
+  data %>%
+    gt() %>%
+    tab_style(style = cell_fill(color = "grey30"), locations = cells_column_labels()) %>%
+    tab_style(style = cell_text(color = "white", weight = "bold"), locations = cells_column_labels()) %>%
+    cols_align(align = "left", columns = 1) %>%
+    cols_align(align = "center", columns = -1) %>%
+    tab_options(
+      table.font.size = size,
+      column_labels.border.top.width = 0,
+      table_body.hlines.width = 0,
+      table.border.top.width = 0,
+      table.border.bottom.width = 0
+    )
 }
 ```
 
@@ -119,21 +129,15 @@ data <- dataconf %>%
 - *conf* (degrees): Response confidence level; subjective measure of performance
 - *viewAmount* (degrees): View angle traversed by the participant while the visual feedback was visible; signifies how much attention was paid to the feedback. For example, a lower `viewAmount` would suggest that the participant slowed down to reorient themselves to the new context obtained from the feedback
 
-## Analysis (think of a descriptive title)
+## Behavioral Characteristics
 
 Every bootstrap check below draws `1000` resamples of across subjects rather than individual trials, so no subject's data leaks into another's resample.
 
 ### Stimulus Design
 
 ```{r}
-#| label: fig-stimulus-design
-#| fig-cap: "**Distributions of target heading and visual feedback offset across participants**"
-#| fig-subcap: true
-#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 5
-#| fig-height: 6
 
 # Confirm almost similar concentration of target angles is present across each subject
 rho_by_subj <- data %>%
@@ -152,6 +156,33 @@ target_bins <- cut(
 
 # Show every 3rd bin label for even, uncluttered spacing
 target_bin_ticks <- target_bin_labels[seq(1, length(target_bin_labels), by = 3)]
+
+# Display distribution of fb_offset which was drawn from two components
+breaks <- seq(-180, 180, by = 20)
+bin_width <- 20
+centers <- breaks[-length(breaks)] + bin_width / 2
+
+fb_agg <- data %>%
+  filter(condition == "FB") %>%
+  mutate(
+    bin_center = centers[cut(fb_offset, breaks = breaks, include.lowest = TRUE, labels = FALSE)],
+    subj = factor(subj)
+  ) %>%
+  count(subj, bin_center, .drop = FALSE) %>%
+  # Summarize by subjects to confirm consistency
+  group_by(subj) %>%
+  mutate(prop = n / sum(n)) %>%
+  ungroup() %>%
+  summarise(mean_prop = mean(prop), se_prop = sd(prop) / sqrt(n()), .by = bin_center)
+```
+
+```{r}
+#| label: fig-stimulus-design
+#| fig-cap: "**Distributions of target heading and visual feedback offset across participants**"
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
 
 # Display distribution of target headings
 plot_target <- data %>%
@@ -181,24 +212,6 @@ plot_target <- data %>%
     axis.text = element_text(size = 10)
   )
 
-# Display distribution of fb_offset which was drawn from two components
-breaks <- seq(-180, 180, by = 20)
-bin_width <- 20
-centers <- breaks[-length(breaks)] + bin_width / 2
-
-fb_agg <- data %>%
-  filter(condition == "FB") %>%
-  mutate(
-    bin_center = centers[cut(fb_offset, breaks = breaks, include.lowest = TRUE, labels = FALSE)],
-    subj = factor(subj)
-  ) %>%
-  count(subj, bin_center, .drop = FALSE) %>%
-  # Summarize by subjects to confirm consistency
-  group_by(subj) %>%
-  mutate(prop = n / sum(n)) %>%
-  ungroup() %>%
-  summarise(mean_prop = mean(prop), se_prop = sd(prop) / sqrt(n()), .by = bin_center)
-
 # Source distributions
 theo_gaussian <- function(x) 0.7 * dnorm(x, 0, 30) * bin_width
 theo_uniform  <- function(x) 0.3 * dunif(x, -180, 180) * bin_width
@@ -221,24 +234,17 @@ plot_fb_offset <- ggplot(fb_agg, aes(x = bin_center, y = mean_prop)) +
     legend.key.size = unit(1.2, "lines")
   )
 
-plot_target
-plot_fb_offset
+(plot_target | plot_fb_offset) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-- Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`) (@fig-stimulus-design-1). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
-- Visual feedback offset distribution resembles a Gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that (@fig-stimulus-design-2), consistent with how the offsets were generated.
+- Target headings are widely spread for all subjects (circular $\rho$ = `r round(rho_mean, 2)` $\pm$ `r 2*round(rho_sd, 2)`) (@fig-stimulus-design(a)). The most likely explanation for this design decision might be to prevent formation of any pattern matching habits in the participants.
+- Visual feedback offset distribution resembles a Gaussian in the range of $0^\circ \pm 3 \times 30^\circ$ and uniform beyond that (@fig-stimulus-design(b)), consistent with how the offsets were generated.
 
 ### Response Characteristics
 
 ```{r}
-#| label: fig-respond-error-by-target
-#| fig-cap: "**Mean respond and median error across target heading bins**"
-#| fig-subcap: true
-#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 5
-#| fig-height: 6
 
 # Define the number of bootstraps
 R_boot <- 1000
@@ -258,17 +264,6 @@ respond_boot_by_bin <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(mean = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for respond vs. target
-plot_A <- ggplot(respond_boot_by_bin, aes(x = target_bin, y = mean)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  scale_x_discrete(breaks = target_bin_ticks) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-  labs(x = "Target Heading", y = "Mean(respond) with 95% bootstrap CI")
 
 # Compute the median of error per target bins
 error_boot_by_bin <- data %>%
@@ -285,20 +280,6 @@ error_boot_by_bin <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error vs. target
-plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = median)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  scale_x_discrete(breaks = target_bin_ticks) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-  labs(x = "Target Heading", y = "Median(error) with 95% bootstrap CI")
-
-plot_A
-plot_B
 
 # Is error truly positively biased?
 error_wilcox <- wilcox.test(data$error, mu = 0)
@@ -323,8 +304,43 @@ error_slope_ci <- boot.ci(error_slope_boot, type = "perc")$percent[4:5]
 respond_error_rmcorr <- rmcorr(subj, target, error, dataset = data)
 ```
 
-- Respond angle increases monotonically with target, consistent with `respond` = `target` + `error` relationship (@fig-respond-error-by-target-1). The width of the bootstrapped 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainty with increasing difficulty of the task.
-- Median error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`]). However, the width of the bootstrapped 95% CI for mean error increases with target angle just like respond (@fig-respond-error-by-target-2).
+```{r}
+#| label: fig-respond-error-by-target
+#| fig-cap: "**Mean respond and median error across target heading bins**"
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
+
+# Define the plot for respond vs. target
+plot_A <- ggplot(respond_boot_by_bin, aes(x = target_bin, y = mean)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "Target Heading", y = "Mean(respond) with 95% bootstrap CI")
+
+# Define the plot for error vs. target
+plot_B <- ggplot(error_boot_by_bin, aes(x = target_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "Target Heading", y = "Median(error) with 95% bootstrap CI")
+
+(plot_A | plot_B) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
+```
+
+- Respond angle increases monotonically with target, consistent with `respond` = `target` + `error` relationship (@fig-respond-error-by-target(a)). The width of the bootstrapped 95% confidence interval (CI) also increases with target angle suggesting an increase in uncertainty with increasing difficulty of the task.
+- Median error is consistently positive (Wilcoxon signed-rank test, `r ifelse(error_wilcox$p.value < 0.001, "p < 0.001", paste("p =", round(error_wilcox$p.value, 3)))`; bootstrapped median 95% CI [`r round(median_error_ci[1], 2)`, `r round(median_error_ci[2], 2)`]) but does not increase or decrease as a function of target angle (bootstrapped median regression slope 95% CI [`r round(error_slope_ci[1], 3)`, `r round(error_slope_ci[2], 3)`]). However, the width of the bootstrapped 95% CI for mean error increases with target angle just like respond (@fig-respond-error-by-target(b)).
 - The growing uncertainty in `respond` tracks `error` directly, since:
 
 $$
@@ -337,14 +353,8 @@ $$
   The repeated measures correlation between `target` and `error` is negligible ($r$ = `r round(respond_error_rmcorr$r, 3)`, 95% CI [`r round(respond_error_rmcorr$CI[1], 3)`, `r round(respond_error_rmcorr$CI[2], 3)`]). Thus, `error` can be used as the predicting variable instead of `respond` to model a participant's response.
 
 ```{r}
-#| label: fig-error-by-condition-offset
-#| fig-cap: "**Median error by condition and by visual feedback offset**"
-#| fig-subcap: true
-#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 5
-#| fig-height: 6
 
 # Compute the median error per condition
 condition_median_boot <- data %>%
@@ -359,13 +369,6 @@ condition_median_boot <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error vs. condition
-plot_C <- ggplot(condition_median_boot, aes(x = condition, y = median, color = condition)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  scale_x_discrete(labels = c(noFB = "No Feedback", FB = "Feedback")) +
-  scale_color_brewer(palette = "Dark2", guide = "none") +
-  theme_bw() +
-  labs(x = "Condition", y = "Median(error) with 95% bootstrap CI")
 
 # Define the 20 degree signed fb_offset bins for plotting purposes
 fb_data <- data %>%
@@ -392,19 +395,6 @@ offset_median_boot_by_bin <- fb_data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error vs. fb_offset
-plot_D <- ggplot(offset_median_boot_by_bin, aes(x = offset_bin, y = median)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-  labs(x = "Visual feedback offset", y = "Median(error) with 95% bootstrap CI")
-
-plot_C
-plot_D
 
 # Does error's median differ between noFB and FB conditions?
 # Controlled for subjects
@@ -429,18 +419,49 @@ offset_mirror_median_diff_boot <- boot(subjs, function(d, i) {
 offset_mirror_median_diff_ci <- boot.ci(offset_mirror_median_diff_boot, type = "perc")$percent[4:5]
 ```
 
-- Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [`r round(condition_median_diff_ci[1], 2)`, `r round(condition_median_diff_ci[2], 2)`]$^\circ$), consistent with varying reliability of the visual feedback (@fig-error-by-condition-offset-1). The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense [@Noppeney_2021].
-- Median error is low for reliable visual feedback (low offsets), increases rapidly for positive offsets till around 60$^\circ$ and decreases thereafter (@fig-error-by-condition-offset-2). On the other hand, median error increases gradually for negative offsets, plateaus around 60$^\circ$, then increases again (@fig-error-by-condition-offset-2). Thus, participants' responses may be affected by the direction of the feedback offset (mirrored positive vs. negative bins, bootstrapped 95% CI of difference = [`r round(offset_mirror_median_diff_ci[1], 2)`, `r round(offset_mirror_median_diff_ci[2], 2)`]$^\circ$) along with its reliability. The extent of integration between proprioception and vision depends on the size of the conflict between the information from both sources [@Noppeney_2021].
-
 ```{r}
-#| label: fig-error-variance
-#| fig-cap: "**SD of error across target heading bins, condition, and visual feedback offset**"
-#| fig-subcap: true
-#| layout-ncol: 3
+#| label: fig-error-by-condition-offset
+#| fig-cap: "**Median error by condition and by visual feedback offset**"
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 4
-#| fig-height: 5
+#| fig-width: 10
+#| fig-height: 6
+
+# Define the plot for error vs. condition
+plot_C <- ggplot(condition_median_boot, aes(x = condition, y = median, color = condition)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(labels = c(noFB = "No Feedback", FB = "Feedback")) +
+  scale_color_brewer(palette = "Dark2", guide = "none") +
+  theme_bw() +
+  labs(x = "Condition", y = "Median(error) with 95% bootstrap CI")
+
+# Always show the two bins nearest zero, alternate ticks outward from there
+offset_bin_center_idx <- n_offset_bins / 2
+left_ticks <- rev(seq(offset_bin_center_idx, 1, by = -2))
+right_ticks <- seq(offset_bin_center_idx + 1, n_offset_bins, by = 2)
+offset_bin_ticks <- offset_bin_labels[c(left_ticks, right_ticks)]
+
+# Define the plot for error vs. fb_offset
+plot_D <- ggplot(offset_median_boot_by_bin, aes(x = offset_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = offset_bin_ticks) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "Visual feedback offset", y = "Median(error) with 95% bootstrap CI")
+
+(plot_C | plot_D) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
+```
+
+- Median error was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference between two conditions = [`r round(condition_median_diff_ci[1], 2)`, `r round(condition_median_diff_ci[2], 2)`]$^\circ$), consistent with varying reliability of the visual feedback (@fig-error-by-condition-offset(a)). The above deviation from the forced fusion model based on a normative Bayesian observer has been shown before where the observers have a tendency to overweight signals from a sensory modality (vision) which can provide better information than their own proprioceptive sense [@Noppeney_2021].
+- Median error is low for reliable visual feedback (low offsets), increases rapidly for positive offsets till around 60$^\circ$ and decreases thereafter (@fig-error-by-condition-offset(b)). On the other hand, median error increases gradually for negative offsets, plateaus around 60$^\circ$, then increases again (@fig-error-by-condition-offset(b)). Thus, participants' responses may be affected by the direction of the feedback offset (mirrored positive vs. negative bins, bootstrapped 95% CI of difference = [`r round(offset_mirror_median_diff_ci[1], 2)`, `r round(offset_mirror_median_diff_ci[2], 2)`]$^\circ$) along with its reliability. The extent of integration between proprioception and vision depends on the size of the conflict between the information from both sources [@Noppeney_2021].
+
+```{r}
+#| code-summary: ""
+#| code-fold: true
 
 # Does the variance of error grow across target bins?
 # Controlling for individual subjects
@@ -457,17 +478,6 @@ error_sd_boot_by_bin <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error's SD vs. target
-plot_E <- ggplot(error_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  scale_x_discrete(breaks = target_bin_ticks) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-  labs(x = "Target Heading", y = "SD(error) with 95% bootstrap CI")
 
 # Does error's SD differ between noFB and FB conditions?
 # Controlled for subjects
@@ -483,13 +493,6 @@ condition_sd_boot <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error's SD vs. condition
-plot_F <- ggplot(condition_sd_boot, aes(x = condition, y = sd, color = condition)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  scale_x_discrete(labels = c(noFB = "No Feedback", FB = "Feedback")) +
-  scale_color_brewer(palette = "Dark2", guide = "none") +
-  theme_bw() +
-  labs(x = "Condition", y = "SD(error) with 95% bootstrap CI")
 
 # Does error's SD grow with fb_offset?
 # Controlled for subjects
@@ -506,20 +509,6 @@ offset_sd_boot_by_bin <- fb_data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for error's SD vs. fb_offset
-plot_G <- ggplot(offset_sd_boot_by_bin, aes(x = offset_bin, y = sd)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-  labs(x = "Visual feedback offset", y = "SD(error) with 95% bootstrap CI")
-
-plot_E
-plot_F
-plot_G
 
 # Does error's SD differ between noFB and FB conditions? (magnitude of the difference)
 # Controlled for subjects
@@ -548,19 +537,56 @@ accuracy_view_amount_slope_boot <- boot(subjs, function(d, i) {
 accuracy_view_amount_slope_ci <- boot.ci(accuracy_view_amount_slope_boot, type = "perc")$percent[4:5]
 ```
 
-- Standard deviation (SD) of error may be a measure of uncertainty about the information. As @fig-error-variance-1 shows, SD of error grows with task difficulty, but it rises in two phases separated by a plateau in the range of 120$^\circ$ to 240$^\circ$.
-- The amount of uncertainty was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference = [`r round(condition_sd_diff_ci[1], 2)`, `r round(condition_sd_diff_ci[2], 2)`]$^\circ$) (@fig-error-variance-2).
-- The amount of uncertainty rises with unreliability of the visual feedback but plateaus around 60$^\circ$ for both positive and negative offsets (@fig-error-variance-3). The uncertainty might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information. The uncertainty is higher for negative feedback offsets as compared to the corresponding positive offsets (mirrored positive vs. negative bins, bootstrapped 95% CI of difference = [`r round(offset_mirror_sd_diff_ci[1], 2)`, `r round(offset_mirror_sd_diff_ci[2], 2)`]$^\circ$).
-
 ```{r}
-#| label: fig-error-by-trial-duration
-#| fig-cap: "**Median and SD of error across trial duration deciles**"
-#| fig-subcap: true
-#| layout-ncol: 2
+#| label: fig-error-variance
+#| fig-cap: "**SD of error across target heading bins, condition, and visual feedback offset**"
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 5
-#| fig-height: 6
+#| fig-width: 12
+#| fig-height: 5
+
+# Define the plot for error's SD vs. target
+plot_E <- ggplot(error_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "Target Heading", y = "SD(error) with 95% bootstrap CI")
+
+# Define the plot for error's SD vs. condition
+plot_F <- ggplot(condition_sd_boot, aes(x = condition, y = sd, color = condition)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(labels = c(noFB = "No Feedback", FB = "Feedback")) +
+  scale_color_brewer(palette = "Dark2", guide = "none") +
+  theme_bw() +
+  labs(x = "Condition", y = "SD(error) with 95% bootstrap CI")
+
+# Define the plot for error's SD vs. fb_offset
+plot_G <- ggplot(offset_sd_boot_by_bin, aes(x = offset_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = offset_bin_ticks) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "Visual feedback offset", y = "SD(error) with 95% bootstrap CI")
+
+(plot_E | plot_F | plot_G) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
+```
+
+- Standard deviation (SD) of error may be a measure of uncertainty about the information. As @fig-error-variance(a) shows, SD of error grows with task difficulty, but it rises in two phases separated by a plateau in the range of 120$^\circ$ to 240$^\circ$.
+- The amount of uncertainty was higher in trials where visual feedback was provided (bootstrapped 95% CI of difference = [`r round(condition_sd_diff_ci[1], 2)`, `r round(condition_sd_diff_ci[2], 2)`]$^\circ$) (@fig-error-variance(b)).
+- The amount of uncertainty rises with unreliability of the visual feedback but plateaus around 60$^\circ$ for both positive and negative offsets (@fig-error-variance(c)). The uncertainty might be tracking the reliability of the visual feedback reinforcing the impact of conflict size on integration of visual and proprioceptive information. The uncertainty is higher for negative feedback offsets as compared to the corresponding positive offsets (mirrored positive vs. negative bins, bootstrapped 95% CI of difference = [`r round(offset_mirror_sd_diff_ci[1], 2)`, `r round(offset_mirror_sd_diff_ci[2], 2)`]$^\circ$).
+
+```{r}
+#| code-summary: ""
+#| code-fold: true
 
 # Define the trial_duration decile bins for plotting purposes
 duration_bin_breaks <- quantile(data$trial_duration, probs = seq(0, 1, by = 0.1))
@@ -572,7 +598,7 @@ duration_bins <- cut(
 )
 
 # Compute the median of error per trial_duration bin
-plot_error_by_duration <- data %>%
+error_median_boot_by_duration <- data %>%
   mutate(duration_bin = duration_bins) %>%
   group_by(duration_bin) %>%
   # Stratify by participants
@@ -585,20 +611,10 @@ plot_error_by_duration <- data %>%
     }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
-  }) %>%
-    # Build the plot
-    ggplot(aes(x = duration_bin, y = median)) +
-    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-    theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-    labs(x = "trial duration (sec)", y = "Median(error) with 95% bootstrap CI")
+  })
 
 # Compute the SD of error per trial_duration bin
-plot_error_sd_by_duration <- data %>%
+error_sd_boot_by_duration <- data %>%
   mutate(duration_bin = duration_bins) %>%
   group_by(duration_bin) %>%
   # Stratify by participants
@@ -611,20 +627,7 @@ plot_error_sd_by_duration <- data %>%
     }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
-  }) %>%
-    # Build the plot
-    ggplot(aes(x = duration_bin, y = sd)) +
-    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-    theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-    labs(x = "trial duration (sec)", y = "SD(error) with 95% bootstrap CI")
-
-plot_error_by_duration
-plot_error_sd_by_duration
+  })
 
 # Does error's median grow with trial_duration?
 # Controlled for subjects
@@ -635,17 +638,44 @@ duration_slope_boot <- boot(subjs, function(d, i) {
 duration_slope_ci <- boot.ci(duration_slope_boot, type = "perc")$percent[4:5]
 ```
 
-- Median error increases slightly with trial duration (bootstrapped 95% CI for median regression slope [`r format(round(duration_slope_ci[1], 4), scientific = FALSE)`, `r format(round(duration_slope_ci[2], 4), scientific = FALSE)`]$^\circ$/msec) (@fig-error-by-trial-duration-1), and so does the uncertainty (@fig-error-by-trial-duration-2).
-
 ```{r}
-#| label: fig-error-by-fb-time
-#| fig-cap: "**Median and SD of error across different times (deciles) at which the feedback was displayed**"
-#| fig-subcap: true
-#| layout-ncol: 2
+#| label: fig-error-by-trial-duration
+#| fig-cap: "**Median and SD of error across trial duration deciles**"
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 5
+#| fig-width: 10
 #| fig-height: 6
+
+# Build the plot for median error vs. trial_duration
+plot_error_by_duration <- ggplot(error_median_boot_by_duration, aes(x = duration_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "trial duration (sec)", y = "Median(error) with 95% bootstrap CI")
+
+# Build the plot for error's SD vs. trial_duration
+plot_error_sd_by_duration <- ggplot(error_sd_boot_by_duration, aes(x = duration_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "trial duration (sec)", y = "SD(error) with 95% bootstrap CI")
+
+(plot_error_by_duration | plot_error_sd_by_duration) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
+```
+
+- Median error increases slightly with trial duration (bootstrapped 95% CI for median regression slope [`r format(round(duration_slope_ci[1], 4), scientific = FALSE)`, `r format(round(duration_slope_ci[2], 4), scientific = FALSE)`]$^\circ$/msec) (@fig-error-by-trial-duration(a)), and so does the uncertainty (@fig-error-by-trial-duration(b)).
+
+```{r}
+#| code-summary: ""
+#| code-fold: true
 
 # Define the fb_time decile bins for plotting purposes, FB trials only
 fb_time_bin_breaks <- quantile(fb_data$fb_time, probs = seq(0, 1, by = 0.1))
@@ -657,7 +687,7 @@ fb_time_bins <- cut(
 )
 
 # Compute the median of error per fb_time bin
-plot_error_by_fb_time <- fb_data %>%
+error_median_boot_by_fb_time <- fb_data %>%
   mutate(fb_time_bin = fb_time_bins) %>%
   group_by(fb_time_bin) %>%
   # Stratify by participants
@@ -670,20 +700,10 @@ plot_error_by_fb_time <- fb_data %>%
     }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
-  }) %>%
-    # Build the plot
-    ggplot(aes(x = fb_time_bin, y = median)) +
-    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-    theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-    labs(x = "feedback display time (sec)", y = "Median(error) with 95% bootstrap CI")
+  })
 
 # Compute the SD of error per fb_time bin
-plot_error_sd_by_fb_time <- fb_data %>%
+error_sd_boot_by_fb_time <- fb_data %>%
   mutate(fb_time_bin = fb_time_bins) %>%
   group_by(fb_time_bin) %>%
   # Stratify by participants
@@ -696,20 +716,7 @@ plot_error_sd_by_fb_time <- fb_data %>%
     }, R = R_boot)
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
-  }) %>%
-    # Build the plot
-    ggplot(aes(x = fb_time_bin, y = sd)) +
-    geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-    theme_bw() +
-    theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-    labs(x = "feedback display time (sec)", y = "SD(error) with 95% bootstrap CI")
-
-plot_error_by_fb_time
-plot_error_sd_by_fb_time
+  })
 
 # Does error's median grow with fb_time?
 fb_time_slope_boot <- boot(subjs, function(d, i) {
@@ -719,23 +726,50 @@ fb_time_slope_boot <- boot(subjs, function(d, i) {
 fb_time_slope_ci <- boot.ci(fb_time_slope_boot, type = "perc")$percent[4:5]
 ```
 
-- Median error does not depend on when the feedback was displayed (bootstrapped 95% CI for median regression slope [`r format(round(fb_time_slope_ci[1], 4), scientific = FALSE)`, `r format(round(fb_time_slope_ci[2], 4), scientific = FALSE)`]$^\circ$/msec) (@fig-error-by-fb-time-1), but the uncertainty is less when the feedback is displayed earlier rather than later (@fig-error-by-fb-time-2).
+```{r}
+#| label: fig-error-by-fb-time
+#| fig-cap: "**Median and SD of error across different times (deciles) at which the feedback was displayed**"
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
+
+# Build the plot for median error vs. fb_time
+plot_error_by_fb_time <- ggplot(error_median_boot_by_fb_time, aes(x = fb_time_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "feedback display time (sec)", y = "Median(error) with 95% bootstrap CI")
+
+# Build the plot for error's SD vs. fb_time
+plot_error_sd_by_fb_time <- ggplot(error_sd_boot_by_fb_time, aes(x = fb_time_bin, y = sd)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "feedback display time (sec)", y = "SD(error) with 95% bootstrap CI")
+
+(plot_error_by_fb_time | plot_error_sd_by_fb_time) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
+```
+
+- Median error does not depend on when the feedback was displayed (bootstrapped 95% CI for median regression slope [`r format(round(fb_time_slope_ci[1], 4), scientific = FALSE)`, `r format(round(fb_time_slope_ci[2], 4), scientific = FALSE)`]$^\circ$/msec) (@fig-error-by-fb-time(a)), but the uncertainty is less when the feedback is displayed earlier rather than later (@fig-error-by-fb-time(b)).
 
 From the above characteristics of the participants' responses, it is clear that the magnitude of error depends on both the proprioceptive and visual information. The final perceptual estimate is computed by averaging the individual estimates weighted by their reliabilities [@Noppeney_2021], but this may or may not happen in a normative manner depending on the size of the conflict between the two information sources. The uncertainty depends on task difficulty (`target`), trial duration, presence or absence of visual feedback, reliability of the visual feedback (`|fb_offset|`), direction of the offset, and the time when the feedback was displayed.  
 
 Accuracy (1/`|error|`) improves as attention increases (`viewAmount` decreases) (bootstrapped 95% CI for the median regression slope [`r round(accuracy_view_amount_slope_ci[1], 3)`, `r round(accuracy_view_amount_slope_ci[2], 3)`]). A good model should have the same behavioral feature.
 
-### Subjective Measure (make it more descriptive)
+### Subjective Confidence Tracks Performance Accuracy
 
 ```{r}
-#| label: fig-conf-by-target
-#| fig-cap: "**Median and SD of subjective confidence across target heading bins**"
-#| fig-subcap: true
-#| layout-ncol: 2
 #| code-summary: ""
 #| code-fold: true
-#| fig-width: 5
-#| fig-height: 6
 
 # Compute the median of conf per target bins
 conf_median_boot_by_bin <- data %>%
@@ -751,17 +785,6 @@ conf_median_boot_by_bin <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(median = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
-# Define the plot for conf vs. target
-plot_H <- ggplot(conf_median_boot_by_bin, aes(x = target_bin, y = median)) +
-  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
-  scale_x_discrete(breaks = target_bin_ticks) +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 45, hjust = 1),
-    axis.title = element_text(size = 12),
-    axis.text = element_text(size = 10)
-  ) +
-  labs(x = "Target Heading", y = "Median(conf) with 95% bootstrap CI")
 
 # Does subjective confidence (conf) grow with target (task difficulty)?
 # Controlled for subjects
@@ -786,6 +809,36 @@ conf_sd_boot_by_bin <- data %>%
     ci <- boot.ci(b, type = "perc")$percent[4:5]
     tibble(sd = b$t0, ci_low = ci[1], ci_high = ci[2])
   })
+
+# Does conf track |error| ie. 1/accuracy?
+# Controlled for subjects
+conf_error_slope_boot <- boot(subjs, function(d, i) {
+  samp <- map_dfr(d[i], ~ data %>% filter(subj == .x))
+  coef(rq(conf ~ abs(error), tau = 0.5, data = samp))["abs(error)"]
+}, R = R_boot)
+conf_error_slope_ci <- boot.ci(conf_error_slope_boot, type = "perc")$percent[4:5]
+```
+
+```{r}
+#| label: fig-conf-by-target
+#| fig-cap: "**Median and SD of subjective confidence across target heading bins**"
+#| code-summary: ""
+#| code-fold: true
+#| fig-width: 10
+#| fig-height: 6
+
+# Define the plot for conf vs. target
+plot_H <- ggplot(conf_median_boot_by_bin, aes(x = target_bin, y = median)) +
+  geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
+  scale_x_discrete(breaks = target_bin_ticks) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  labs(x = "Target Heading", y = "Median(conf) with 95% bootstrap CI")
+
 # Define the plot for conf's SD vs. target
 plot_I <- ggplot(conf_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
   geom_pointrange(aes(ymin = ci_low, ymax = ci_high)) +
@@ -798,27 +851,18 @@ plot_I <- ggplot(conf_sd_boot_by_bin, aes(x = target_bin, y = sd)) +
   ) +
   labs(x = "Target Heading", y = "SD(conf) with 95% bootstrap CI")
 
-plot_H
-plot_I
-
-# Does conf track |error| ie. 1/accuracy?
-# Controlled for subjects
-conf_error_slope_boot <- boot(subjs, function(d, i) {
-  samp <- map_dfr(d[i], ~ data %>% filter(subj == .x))
-  coef(rq(conf ~ abs(error), tau = 0.5, data = samp))["abs(error)"]
-}, R = R_boot)
-conf_error_slope_ci <- boot.ci(conf_error_slope_boot, type = "perc")$percent[4:5]
+(plot_H | plot_I) + plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-- Subjective confidence reduces with task difficulty (bootstrapped 95% CI for the median regression slope [`r round(conf_target_slope_ci[1], 3)`, `r round(conf_target_slope_ci[2], 3)`]) similar to error which is an objective measure of performance (@fig-conf-by-target-1).
-- But SD of this subjective measure does not grow with task difficulty (@fig-conf-by-target-2).
+- Subjective confidence reduces with task difficulty (bootstrapped 95% CI for the median regression slope [`r round(conf_target_slope_ci[1], 3)`, `r round(conf_target_slope_ci[2], 3)`]) similar to error which is an objective measure of performance (@fig-conf-by-target(a)).
+- But SD of this subjective measure does not grow with task difficulty (@fig-conf-by-target(b)).
 - Confidence tracks performance accuracy (1/`|error|`) (bootstrapped 95% CI for the median regression slope [`r round(conf_error_slope_ci[1], 3)`, `r round(conf_error_slope_ci[2], 3)`]).
 
 Thus, participants track their performance based on the task's difficulty and how well they actually did. A good model should have the same behavioral feature.
 
 ## Models
 
-Generalized Additive Models for Location Scale and Shape (`gamlss` library in R) [@R.A.Rigby_2005] were chosen for modelling error since it allows modelling not only of the central tendency, but also of the other parameters of the distribution like the standard deviation. GAMLSS uses penalized maximum likelihood estimatation (MLE) to fit models. A distribution family for the predicted variable can be selected from a very general family of distributions. A skew-t (`SST`) family fit the error distribution far better than a normal distribution (see @appendix). The same family was used for the following models. The shape parameters (skewness, $\nu$ and kurtosis, $\tau$) were not modelled since the overall shape of the uncertainty is usually unique to each individual and may not change in the time period of the experiment. Every model controls for inter-participant variability by including the participants as random effects predictor. Penalized smooth functions were used for the predictors which require no assumption of the order of relationship and penalize overfitting due to noise.
+Generalized Additive Models for Location Scale and Shape (`gamlss` library in R) [@R.A.Rigby_2005] were chosen for modelling error since it allows modelling not only of the central tendency, but also of the other parameters of the distribution like the standard deviation. GAMLSS uses penalized maximum likelihood estimatation (MLE) to fit models. A distribution family for the predicted variable can be selected from a very general family of distributions. A skew-t (`SST`) family fit the error distribution far better than a normal distribution (see @sec-appendix). The same family was used for the following models. The shape parameters (skewness, $\nu$ and kurtosis, $\tau$) were not modelled since the overall shape of the uncertainty is usually unique to each individual and may not change in the time period of the experiment. Every model controls for inter-participant variability by including the participants as random effects predictor. Penalized smooth functions were used for the predictors which require no assumption of the order of relationship and penalize overfitting due to noise.
 
 ### Naive Unisensory Model
 
@@ -832,13 +876,9 @@ $$
 \end{aligned}
 $$
 
-where each $f_i$ is a penalized smooth function and $b_{subj}$ is a random intercept for per-subject fit. No collinearity existed between the chosen predictors (@fig-unisensory-2).
+where each $f_i$ is a penalized smooth function and $b_{subj}$ is a random intercept for per-subject fit. No collinearity existed between the chosen predictors (@fig-unisensory(b)).
 
 ```{r}
-#| label: fig-unisensory
-#| fig-cap: "**(a) Naive Unisensory model**: predicted uncertainty against target at 5 trial durations; **(b) Predictor collinearity**"
-#| fig-subcap: true
-#| layout-ncol: 2
 #| code-summary: Fit unisensory model
 #| code-fold: true
 #| message: false
@@ -868,8 +908,7 @@ unisensory_vif_table <- unisensory_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>%
   rownames_to_column("term") %>%
   mutate(term = unisensory_term_labels[term]) %>%
   rename(Term = term, `Adjusted GVIF` = `GVIF^(1/(2*Df))`) %>%
-  mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2))
 
 # 10th/30th/50th/70th/90th percentile trial_duration, one predicted SD curve each
 duration_levels <- quantile(data$trial_duration, probs = c(0.1, 0.3, 0.5, 0.7, 0.9))
@@ -883,6 +922,16 @@ unisensory_grid <- expand_grid(
 unisensory_grid$pred_sigma <- predictAll(
   unisensory_fit, newdata = unisensory_grid, type = "response", data = unisensory_data, output = "list"
 )$sigma
+```
+
+```{r}
+#| label: fig-unisensory
+#| fig-cap: "**Naive Unisensory model**: (a) predicted uncertainty against target at 5 trial durations; (b) predictor collinearity"
+#| fig-width: 10
+#| fig-height: 6
+#| code-summary: Plot unisensory model
+#| code-fold: true
+#| message: false
 
 # Plot predicted SD vs. target, one line per trial_duration level
 unisensory_sd_plot <- unisensory_grid %>%
@@ -894,11 +943,12 @@ unisensory_sd_plot <- unisensory_grid %>%
   theme_bw() +
   theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
 
-unisensory_sd_plot
-grid.arrange(unisensory_vif_table)
+(unisensory_sd_plot | wrap_table(unisensory_vif_table %>% dark_header_gt(), panel = "full")) +
+  plot_layout(widths = c(0.5, 0.5)) +
+  plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-Predicted uncertainty from this model does not increase monotonically with target heading (@fig-unisensory-1), unlike the behavioral relationship between error and target (@fig-error-variance-1).
+Predicted uncertainty from this model does not increase monotonically with target heading (@fig-unisensory(a)), unlike the behavioral relationship between error and target (@fig-error-variance(a)).
 
 ### Cue Combination Model
 
@@ -919,11 +969,6 @@ $$
 $$
 
 ```{r}
-#| label: fig-cue-combination
-#| fig-cap: "**(a) Cue Combination model**: combined predicted estimate against feedback offset, by target, faceted by trial duration; **(b) Predictor collinearity**"
-#| fig-subcap: true
-#| layout: [[70, 30]]
-#| fig-height: 6
 #| code-summary: Fit cue combination model
 #| code-fold: true
 #| message: false
@@ -954,8 +999,7 @@ visual_only_vif_table <- visual_only_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>%
   rownames_to_column("term") %>%
   mutate(term = visual_only_term_labels[term]) %>%
   rename(Term = term, `Adjusted GVIF` = `GVIF^(1/(2*Df))`) %>%
-  mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(30))
+  mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2))
 
 # 5 evenly-spaced target levels for hue, 5 trial_duration quantile levels for faceting
 target_levels <- c(20, 80, 140, 200, 260)
@@ -979,6 +1023,17 @@ cue_vis_pred <- predictAll(
 
 # Precision-weighted combined SD
 cue_combination_grid$pred_sigma <- sqrt(1 / (1 / cue_uni_pred$sigma^2 + 1 / cue_vis_pred$sigma^2))
+```
+
+```{r}
+#| label: fig-cue-combination
+#| fig-cap: "**Cue Combination model**: (a) combined predicted estimate against feedback offset, by target, faceted by trial duration; (b) predictor collinearity"
+#| fig-width: 12
+#| fig-height: 6
+#| code-summary: Plot cue combination model
+#| code-fold: true
+#| message: false
+#| warning: false
 
 # Plot combined predicted SD vs. fb_offset, colored by target, faceted by trial_duration
 cue_combination_plot <- cue_combination_grid %>%
@@ -994,11 +1049,13 @@ cue_combination_plot <- cue_combination_grid %>%
   theme_bw() +
   theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
 
-reposition_legend(cue_combination_plot, "center", panel = "panel-3-2")
-grid.arrange(visual_only_vif_table)
+(wrap_elements(full = reposition_legend(cue_combination_plot, "center", panel = "panel-3-2", plot = FALSE)) |
+  wrap_table(visual_only_vif_table %>% dark_header_gt(size = 30), panel = "full")) +
+  plot_layout(widths = c(0.55, 0.45)) +
+  plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-The predicted uncertainty of this model was low for reliable visual feedback and increased as offset increased until around 50$\circ$. Negative offsets showed higher predicted uncertainty as compared to positive offsets (@fig-cue-combination-1). Both of these features are consistent with the behavioral relationship seen between error and reliability (@fig-error-variance-3). Predicted uncertainty increased with both task difficulty and amount of time taken to respond (@fig-cue-combination-1), consistent with the behavioral relationship between these variables (@fig-error-variance-1, @fig-error-by-trial-duration-2). No collinearity existed between the chosen predictors (@fig-cue-combination-2).
+The predicted uncertainty of this model was low for reliable visual feedback and increased as offset increased until around 50$\circ$. Negative offsets showed higher predicted uncertainty as compared to positive offsets (@fig-cue-combination(a)). Both of these features are consistent with the behavioral relationship seen between error and reliability (@fig-error-variance(c)). Predicted uncertainty increased with both task difficulty and amount of time taken to respond (@fig-cue-combination(a)), consistent with the behavioral relationship between these variables (@fig-error-variance(a), @fig-error-by-trial-duration(b)). No collinearity existed between the chosen predictors (@fig-cue-combination(b)).
 
 ### Flexible Multisensory Model
 
@@ -1016,11 +1073,6 @@ $$
 where each $g_i$ is a varying-coefficient smooth function for interactions between variables and their effect modifiers.
 
 ```{r}
-#| label: fig-multisensory
-#| fig-cap: "**(a) Flexible Multisensory model**: predicted estimate against feedback offset, by target, faceted by trial duration, at median view amount; **(b) Predictor collinearity**"
-#| fig-subcap: true
-#| layout: [[70, 30]]
-#| fig-height: 6
 #| code-summary: Fit multisensory model
 #| code-fold: true
 #| message: false
@@ -1065,8 +1117,7 @@ multisensory_vif_table <- multisensory_vif[, "GVIF^(1/(2*Df))", drop = FALSE] %>
   rownames_to_column("term") %>%
   mutate(term = multisensory_term_labels[term]) %>%
   rename(Term = term, `Adjusted GVIF` = `GVIF^(1/(2*Df))`) %>%
-  mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2)) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(30))
+  mutate(`Adjusted GVIF` = round(`Adjusted GVIF`, 2))
 
 # 5 trial_duration quantile levels for faceting, viewAmount fixed at median
 multisensory_duration_levels <- quantile(fb_data$trial_duration, probs = c(0.1, 0.3, 0.5, 0.7, 0.9))
@@ -1083,6 +1134,17 @@ multisensory_grid <- expand_grid(
 multisensory_grid$pred_sigma <- predictAll(
   multisensory_fit, newdata = multisensory_grid, type = "response", data = multisensory_data, output = "list"
 )$sigma
+```
+
+```{r}
+#| label: fig-multisensory
+#| fig-cap: "**Flexible Multisensory model**: (a) predicted estimate against feedback offset, by target, faceted by trial duration, at median view amount; (b) predictor collinearity"
+#| fig-width: 12
+#| fig-height: 6
+#| code-summary: Plot multisensory model
+#| code-fold: true
+#| message: false
+#| warning: false
 
 # Plot predicted SD vs. fb_offset, colored by target, faceted by trial_duration
 multisensory_plot <- multisensory_grid %>%
@@ -1100,19 +1162,20 @@ multisensory_plot <- multisensory_grid %>%
   theme_bw() +
   theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
 
-reposition_legend(multisensory_plot, "center", panel = "panel-3-2")
-grid.arrange(multisensory_vif_table)
+(wrap_elements(full = reposition_legend(multisensory_plot, "center", panel = "panel-3-2", plot = FALSE)) |
+  wrap_table(multisensory_vif_table %>% dark_header_gt(size = 30), panel = "full")) +
+  plot_layout(widths = c(0.55, 0.45)) +
+  plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-The predicted uncertainty of this model behaves similarly to the cue combination model (@fig-multisensory-1). The predicted uncertainty for target heading of 20$\circ$ increases as trial duration increases. But this increase is asymmetric for corresponding negative and positive offsets. The model may be capturing an interaction between low target values, higher trial durations and positive offsets. For example, a positive offset for a smaller turn pushes the error in the same direction, especially when more time was taken to respond. Such an effect was not captured by the cue combination model. Another possible explanation is a sparsity of training data at the confluence of low target values and high trial durations making the predictions less stable. No collinearity existed between the chosen predictors (@fig-multisensory-2).
+The predicted uncertainty of this model behaves similarly to the cue combination model (@fig-multisensory(a)). The predicted uncertainty for target heading of 20$\circ$ increases as trial duration increases. But this increase is asymmetric for corresponding negative and positive offsets. The model may be capturing an interaction between low target values, higher trial durations and positive offsets. For example, a positive offset for a smaller turn pushes the error in the same direction, especially when more time was taken to respond. Such an effect was not captured by the cue combination model. Another possible explanation is a sparsity of training data at the confluence of low target values and high trial durations making the predictions less stable. No collinearity existed between the chosen predictors (@fig-multisensory(b)).
 
 ## Model Comparison
 
 ```{r}
 #| label: fig-model-comparison
-#| fig-cap: "**(a) Training BIC**; **(b) 5-fold CV RMSE across all models**"
-#| fig-subcap: true
-#| layout-ncol: 2
+#| fig-cap: "(a) Training BIC; (b) 5-fold CV RMSE across all models"
+#| fig-width: 10
 #| fig-height: 2
 #| code-summary: ""
 #| code-fold: true
@@ -1127,7 +1190,7 @@ model_comparison_bic <- tibble(
   )
 ) %>%
   arrange(BIC) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  dark_header_gt()
 
 # Raw per-fold RMSE from scripts/model-cv.R, computed offline overnight
 cv_results <- readRDS(here("data", "cv-results.rds"))
@@ -1151,22 +1214,17 @@ cv_summary <- cv_results %>%
   ) %>%
   dplyr::select(model, rmse) %>%
   rename(Model = model, `RMSE (mean ± 2SE)` = rmse) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+  dark_header_gt()
 
-grid.arrange(model_comparison_bic)
-grid.arrange(cv_summary)
+(wrap_table(model_comparison_bic, panel = "full") | wrap_table(cv_summary, panel = "full")) +
+  plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-The Bayesian Information Criterion (BIC) score (penalizes complexity) was much lower for the flexible multisensory model than the naive unisensory model (@fig-model-comparison-1). A 5-fold cross validation of all 3 models showed the same ordering by average RMSE: naive unisensory, then cue combination, then flexible multisensory (@fig-model-comparison-2).
+The Bayesian Information Criterion (BIC) score (penalizes complexity) was much lower for the flexible multisensory model than the naive unisensory model (@fig-model-comparison(a)). A 5-fold cross validation of all 3 models showed the same ordering by average RMSE: naive unisensory, then cue combination, then flexible multisensory (@fig-model-comparison(b)).
 
 ## Behavioral Validation
 
 ```{r}
-#| label: fig-behavioral-validation
-#| fig-cap: "**(a) Flexible Multisensory predicted |error| against viewAmount, by feedback offset**; **(b) Bootstrapped slopes: predicted SD ~ |error|** *(top)*, **predicted |error| ~ viewAmount** *(bottom)*"
-#| fig-subcap: true
-#| layout-ncol: 2
-#| fig-height: 5
 #| code-summary: ""
 #| code-fold: true
 #| message: false
@@ -1227,8 +1285,7 @@ validation_sd_cols <- c("unisensory_sd", "cue_combination_sd", "multisensory_sd"
 target_error_table <- tibble(
   Model = validation_models,
   `Slope (predicted SD ~ |error|)` = map_chr(validation_sd_cols, ~ format_ci(validation_slope(.x, "abs(error)", target_error_data)))
-) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(20))
+)
 
 # Slope of predicted |error| against viewAmount, Naive Unisensory and Cue Combination
 view_amount_table <- tibble(
@@ -1237,8 +1294,7 @@ view_amount_table <- tibble(
     c("unisensory_abs_error", "cue_combination_abs_error"),
     ~ format_ci(validation_view_amount_slope(.x, view_amount_data))
   )
-) %>%
-  tableGrob(rows = NULL, theme = dark_header_theme(18))
+)
 
 # Multisensory predicted |error| across viewAmount (10th/median/90th percentile), by 6 feedback offset levels
 multi_view_amount_grid <- expand_grid(
@@ -1251,6 +1307,16 @@ multi_view_amount_grid <- expand_grid(
 multi_view_amount_grid$pred_abs_error <- abs(predictAll(
   multisensory_fit, newdata = multi_view_amount_grid, type = "response", data = multisensory_data, output = "list"
 )$mu)
+```
+
+```{r}
+#| label: fig-behavioral-validation
+#| fig-cap: "(a) Flexible Multisensory predicted |error| against viewAmount, by feedback offset; (b) bootstrapped slopes: predicted SD ~ |error| (top), predicted |error| ~ viewAmount (bottom)"
+#| fig-width: 13
+#| fig-height: 6
+#| code-summary: ""
+#| code-fold: true
+#| message: false
 
 # Plot predicted |error| vs viewAmount, colored by feedback offset
 multi_view_amount_plot <- multi_view_amount_grid %>%
@@ -1263,14 +1329,15 @@ multi_view_amount_plot <- multi_view_amount_grid %>%
   theme_bw() +
   theme(axis.title = element_text(size = 16), axis.text = element_text(size = 12))
 
-# Both validation tables stacked into one grob
-validation_tables <- arrangeGrob(target_error_table, view_amount_table, nrow = 2)
-
-multi_view_amount_plot
-grid.arrange(validation_tables)
+(multi_view_amount_plot | (
+  wrap_table(target_error_table %>% dark_header_gt(), panel = "full") /
+    wrap_table(view_amount_table %>% dark_header_gt(size = 18), panel = "full") +
+    plot_layout(widths = c(0.50, 0.50))
+)) +
+  plot_annotation(tag_levels = 'a', tag_prefix = '(', tag_suffix = ')')
 ```
 
-Predicted uncertainty for all three models tracks performance accuracy (@fig-behavioral-validation-2, top), in the same manner as the subjective confidence measure. But naive unisensory and cue combination models' predicted `|error|` decreases as attention increases (`viewAmount`) (@fig-behavioral-validation-2, bottom). The flexible multisensory model instead shows predicted `|error|` increasing with `viewAmount` across all six feedback offset levels (@fig-behavioral-validation-1), consistent with the behavioral relationship of these variables.
+Predicted uncertainty for all three models tracks performance accuracy (@fig-behavioral-validation(b), top), in the same manner as the subjective confidence measure. But naive unisensory and cue combination models' predicted `|error|` decreases as attention increases (`viewAmount`) (@fig-behavioral-validation(b), bottom). The flexible multisensory model instead shows predicted `|error|` increasing with `viewAmount` across all six feedback offset levels (@fig-behavioral-validation(a)), consistent with the behavioral relationship of these variables.
 
 In conclusion, the flexible multisensory model is behaviorally consistent and performs similarly to the cue combination model for integration between proprioception and vision. The cue combination model has been suggested as one of the mechanisms for the binding problem, but several suboptimalities have been indicated before [@Noppeney_2021], such as:
 
@@ -1282,13 +1349,13 @@ The flexible multisensory model presented above uses a different approach ground
 
 One thing is clear to me: the concepts and mechanisms of multisensory processing are applicable to spatial cognition questions and should be considered when investigating how the sense of space is built.
 
-## Appendix {#appendix}
+## Appendix {#sec-appendix}
 
 ```{r}
 #| label: fig-appendix-family
 #| fig-cap: "**Worm plots for Normal, Skew-Normal, Skew-t and Johnson's SU fits to raw error**"
-#| fig-subcap: true
-#| layout-ncol: 2
+#| fig-width: 10
+#| fig-height: 8
 #| code-summary: ""
 #| code-fold: true
 #| warning: false
@@ -1300,7 +1367,9 @@ family_sn2 <- gamlss(error ~ 1, family = SN2(), data = error_data, trace = FALSE
 family_sst <- gamlss(error ~ 1, family = SST(), data = error_data, trace = FALSE)
 family_jsu <- gamlss(error ~ 1, family = JSU(), data = error_data, trace = FALSE)
 
-# Display the worm plots
+# Display the worm plots in a single 2x2 base graphics layout
+# (base graphics, not ggplot, so patchwork does not apply here)
+par(mfrow = c(2, 2))
 wp(family_no, ylim.all = 0.3)
 title(paste0("Normal, BIC = ", round(AIC(family_no, k = log(nobs(family_no))))))
 wp(family_sn2, ylim.all = 0.3)
@@ -1308,6 +1377,8 @@ title(paste0("Skew-Normal, BIC = ", round(AIC(family_sn2, k = log(nobs(family_sn
 wp(family_sst, ylim.all = 0.3)
 title(paste0("Skew-t, BIC = ", round(AIC(family_sst, k = log(nobs(family_sst))))))
 wp(family_jsu, ylim.all = 0.3)
-title(paste0("Johnson's Unbounded Support, BIC = ", round(AIC(family_jsu, k = log(nobs(family_jsu))))))
+title(paste0("Johnson's SU, BIC = ", round(AIC(family_jsu, k = log(nobs(family_jsu))))))
+par(mfrow = c(1, 1))
 ```
 
+## References

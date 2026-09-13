@@ -3,6 +3,10 @@
 # Final render (posts without a Dockerfile)
 quarto render data-slug.qmd --output-dir "$env:NOLE_NEXUS\Nole-Nexus Website\Workbench"
 
+# Final render, _quarto.yml at slug root
+# Run from the slug root
+quarto render scripts/data-slug.qmd --output-dir "$env:NOLE_NEXUS\Nole-Nexus Website\Workbench\data-slug"
+
 # Run from inside post-slug
 # Generate the environment history yml (Out-File -Encoding utf8, not >, to avoid UTF-16)
 mamba env export --from-history | Out-File -Encoding utf8 environment.yml
