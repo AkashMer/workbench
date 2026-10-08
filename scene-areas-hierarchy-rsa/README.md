@@ -44,7 +44,7 @@ docker run --rm `
 1. Clone this repo locally, then `cd` into `scene-areas-hierarchy-rsa/`.
 2. Recreate the environment using `mamba env create -f environment.yml` from `scripts/`.
 3. Follow steps 2-3 above for the FreeSurfer license and raw data.
-4. Preprocessing (fMRIPrep, ROI mask construction) requires Docker regardless — see the `fmriprep-run` and `prepare-roi-masks` `eval: false` cells in the `.qmd` for the commands.
+4. Preprocessing (fMRIPrep, ROI mask construction) requires Docker regardless: see the `fmriprep-run` and `prepare-roi-masks` `eval: false` cells in the `.qmd` for the commands.
 5. Register the `fmri` Jupyter kernel from the recreated environment, then uncomment the `jupyter: fmri` line in the `.qmd`'s YAML header:
 
 ```powershell
@@ -55,6 +55,6 @@ python -m ipykernel install --user --name fmri --display-name "fmri"
 
 ### Notes
 
-- `explore.py` — personal scratchpad for data exploration, not part of the reproducible pipeline.
-- `select_top_vertices.py` — selects the top-N most probable, spatially contiguous vertices per ROI label.
-- `scene-areas-hierarchy-rsa.bib` / `apa.csl` — bibliography and citation style
+- `explore.py` - personal scratchpad for data exploration, not part of the reproducible pipeline.
+- `select_top_vertices.py` - selects the top-N most probable, spatially contiguous vertices per ROI label.
+- `scene-areas-hierarchy-rsa.bib` / `apa.csl` - bibliography and citation style

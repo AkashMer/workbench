@@ -1,0 +1,11 @@
+---
+title: Undecided
+jupyter: fmri
+format: gfm
+# bibliography: 
+# csl: apa.csl
+# from: markdown+wikilinks_title_after_pipe
+# link-citations: true
+# link-bibliography: true
+---
+
