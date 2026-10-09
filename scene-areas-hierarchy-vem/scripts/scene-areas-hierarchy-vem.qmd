@@ -9,3 +9,279 @@ format: gfm
 # link-bibliography: true
 ---
 
+
+```{=html}
+<details class="code-fold"><summary>Download raw fMRI data</summary>
+```
+
+```{python}
+#| label: download-data
+#| eval: false
+
+%%bash
+
+# All the fMRI data downloaded using the url manifest from scidb using aria2c
+aria2c -c -x 16 -s 16 -k 1M --content-disposition \
+  -d ../data/raw_fmri \
+  -i ../data/scidb_manifest.txt
+```
+
+```{=html}
+</details>
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Imports"
+#| label: imports
+
+import warnings
+warnings.filterwarnings('ignore', message='The DICOM readers are highly experimental')
+from pathlib import Path
+import zipfile
+import io
+import numpy as np
+import pandas as pd
+import pydicom
+from nibabel.nicom import dicomwrappers
+import ants
+from scipy.spatial.transform import Rotation
+from scipy.stats import mode
+from nilearn.masking import compute_epi_mask
+
+# Get the current project folder's data directory
+current_dir = Path.cwd()
+data_path = current_dir.parent / "data"
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Candidate selection"
+#| label: candidate-selection
+#| eval: false
+
+# Define path to raw data folder where files were downloaded
+raw_data_path = data_path / "raw_fmri"
+
+# Define the path to behavior data file
+path_to_behavior_zip = raw_data_path / "fMRI_behavior.zip"
+# Load the behavior trial conditions data for all participants
+behavior_zip_file = zipfile.ZipFile(path_to_behavior_zip)
+# Get all the participant ids for the fMRI data
+subject_list = [int(name.split('_')[2]) for name in behavior_zip_file.namelist() 
+                if 'MACOSX' not in name and 'rawdata' in name]
+# Collate all the behavior data into one large dataframe
+behavior_data = pd.DataFrame()
+for sub in subject_list:
+    filepath = f'fMRI_behavior/sub_{sub}_formal_rawdata.txt'
+    trial_cond = pd.read_table(behavior_zip_file.open(filepath),
+                                names = ['map', 'walking_direction', 'trial_type', 'hnd_performance'],
+                                usecols = [1, 2, 4, 5])
+    # Col 0 is not participant id
+    trial_cond['participant_id'] = sub
+    behavior_data = pd.concat([behavior_data, trial_cond])
+
+# Define the path to check if candidate selection file already exists
+candidate_selection_path = data_path / "derivatives" / "candidate_selection"
+candidate_selection_path.mkdir(parents=True, exist_ok=True)
+candidate_metrics_path = candidate_selection_path / "candidate_metrics.tsv"
+
+bold_runs = ['bold_run1', 'bold_run2', 'bold_run3', 'bold_run4']
+subject_rows = []
+# Loop over each participant
+for sub in subject_list:
+    path_to_sub_zip = raw_data_path / f"MRI_Scanning_sub{sub}.zip"
+    run_metrics = []
+    # Loop over each bold run for this participant
+    for bold_run in bold_runs:
+        # Collate all frames from this bold run
+        zip_file = zipfile.ZipFile(path_to_sub_zip)
+        run_files = sorted(name for name in zip_file.namelist() if bold_run in name and not name.endswith('/'))
+        running_sum = np.zeros((112, 112, 62))
+        bold_ants_list = []
+        # Get all frames in ANTs format as a list
+        for file in run_files:
+            # Read DICOM file
+            dcm = pydicom.dcmread(io.BytesIO(zip_file.read(file)))
+            # Wrap the data to read directly from the zipped format
+            dcm_wrap = dicomwrappers.wrapper_from_data(dcm)
+            # Extract the 3D data for each frame
+            dcm_3d = dcm_wrap.get_data()
+            # Add to the running sum to get the mean value for normalization
+            running_sum += dcm_3d
+            # Convert to ANTs format
+            ants_format = ants.from_numpy(dcm_3d, spacing=(2, 2, 2.3))
+            # Append to list
+            bold_ants_list.append(ants_format)
+        # Close the zip file
+        zip_file.close()
+
+        # Compute the mean frame and convert to ANTs format
+        mean_frame_ants = ants.from_numpy(running_sum/len(run_files), spacing = (2, 2, 2.3))
+
+        # Compute the motion correction metrics on the BOLD run
+        bold_4d = ants.list_to_ndimage(ants.make_image((*bold_ants_list[0].shape, len(bold_ants_list)), pixeltype='unsigned int',
+                                                origin = (*bold_ants_list[0].origin, 0)),
+                                    bold_ants_list)
+
+        # Mean FD Computation - Only using evenly spaced 50 frames
+        frame_fd_running_sum = 0
+        for frame in np.linspace(1, len(bold_ants_list) - 1, 50, dtype = int):
+            # Register each frame against previous frame
+            frame_reg = ants.registration(fixed = bold_ants_list[frame-1], moving = bold_ants_list[frame],
+                                        type_of_transform = 'Rigid')
+            # Load the transformed frame and extract the parameters
+            tx = ants.read_transform(frame_reg['fwdtransforms'][0]).parameters
+            # Compute the eular angles from the rotation of the image
+            euler_angles = Rotation.from_matrix(tx[:9].reshape((3,3))).as_euler('xyz', degrees = False)
+            # Convert to mm using 50 mm general head size
+            displacement = euler_angles * 50
+            # Get the translations from the transformed parameters
+            translations = tx[9:]
+            # Compute the FD for this frame
+            frame_fd = np.sum(np.abs(np.append(displacement, translations)))
+            # Add the each frame_fd to a running sum
+            frame_fd_running_sum += frame_fd
+        # Compute the mean FD
+        run_mean_fd = frame_fd_running_sum/50
+
+        # DVARS computation
+        brain_mask = compute_epi_mask(ants.to_nibabel_nifti(mean_frame_ants)).get_fdata().astype(bool)
+        bold_run_signal = bold_4d.numpy().astype(np.float64)[brain_mask]
+        # Rescale so the whole-brain modal intensity becomes 1000, per Power et al. (2012)
+        brain_mode = mode(bold_run_signal, axis = None).mode
+        mode1000_signal = bold_run_signal / brain_mode * 1000
+        # Compute the voxel differences between adjacent frames
+        frame_diff = np.diff(mode1000_signal, axis = -1)
+        # Compute the RMS across all brain voxels
+        rms = np.sqrt(np.mean(frame_diff**2, axis = 0))
+        # Compute the standard deviation of frame-to-frame DVARS across the whole run
+        run_sd_dvars = np.std(rms)
+
+        # Collect this run's metrics
+        run_metrics.append({'mean_fd': run_mean_fd, 'sd_dvars': run_sd_dvars})
+
+    # Average mean FD and max SD(DVARS) across this participant's 4 runs
+    run_metrics_df = pd.DataFrame(run_metrics)
+    subject_row = {'mean_fd': run_metrics_df['mean_fd'].mean(), 'sd_dvars': run_metrics_df['sd_dvars'].max()}
+    subject_row['participant_id'] = sub
+    subject_rows.append(subject_row)
+# Collate results into one DataFrame
+candidate_metrics = pd.DataFrame(subject_rows)
+# Rearrange the columns so participant_id is the first column
+participant_ids = candidate_metrics.pop('participant_id')
+candidate_metrics.insert(0, 'participant_id', participant_ids)
+
+# Compute HND task accuracy (as a percentage) per participant from the already-loaded behavior data
+hnd_trials = behavior_data[behavior_data['hnd_performance'].isin(['Correct', 'Incorrect'])]
+hnd_performance_metric = (hnd_trials.groupby('participant_id')['hnd_performance']
+                    .apply(lambda x: (x == 'Correct').mean() * 100)
+                    .rename('hnd_accuracy')
+                    .reset_index())
+
+# Merge HND accuracy into the candidate metrics
+candidate_metrics = candidate_metrics.merge(hnd_performance_metric, on='participant_id')
+
+# Save the candidate metrics
+candidate_metrics.sort_values('participant_id').to_csv(candidate_metrics_path, sep='\t', index=False)
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Candidate ranking"
+#| label: candidate-ranking
+
+# Load the candidate metrics computed in the RSA post
+candidate_metrics = pd.read_table(data_path / "derivatives" / "candidate_selection" / "candidate_metrics.tsv")
+
+# Exclude if mean FD > 0.2, rank remaining by rank-sum of SD(DVARS) (ascending) and HND accuracy (descending)
+candidate_metrics = (candidate_metrics.query('mean_fd <= 0.2')
+        .assign(sd_dvars_rank = lambda x: x['sd_dvars'].rank(ascending=True),
+                hnd_accuracy_rank = lambda x: x['hnd_accuracy'].rank(ascending=False))
+        .assign(rank_sum = lambda x: x['sd_dvars_rank'] + x['hnd_accuracy_rank'])
+        .sort_values('rank_sum')
+        .set_index('participant_id')
+        .rename_axis('Participant ID')
+        .rename(columns = {'mean_fd':'Mean FD', 'sd_dvars':'Max SD(DVARS)', 'hnd_accuracy':'HND Accuracy %'}))
+# Display the best 2 and worst 2 candidates per rank_sum
+best_worst_candidates = pd.concat([candidate_metrics.head(2), candidate_metrics.tail(2)])
+best_worst_candidates[['Mean FD', 'Max SD(DVARS)', 'HND Accuracy %']]
+```
+
+```{=html}
+<details class="code-fold"><summary>Preprocessing of participant 26 data</summary>
+```
+
+```{python}
+#| label: fmriprep-run
+#| eval: false
+
+%%bash
+
+SUB=26
+DATA=../data
+# fMRIPrep's per-participant HTML report to check completion
+FMRIPREP_REPORT="$DATA/derivatives/sub-${SUB}.html"
+
+# Run fMRIPrep only if preprocessed data not already present
+if [ ! -f "$FMRIPREP_REPORT" ]; then
+  # Extract raw DICOM zip
+  mkdir -p "$DATA/extracted/subject_${SUB}"
+  unzip -n "$DATA/raw_fmri/MRI_Scanning_sub${SUB}.zip" -d "$DATA/extracted/subject_${SUB}"
+
+  # DICOM to Nifti conversion done for all bold runs
+  mkdir -p "$DATA/bids/sub-${SUB}/func" "$DATA/bids/sub-${SUB}/anat"
+  for run in 1 2 3 4; do
+    dcm2niix -z y -f "sub-${SUB}_task-sm_run-${run}_bold" \
+      -o "$DATA/bids/sub-${SUB}/func" \
+      "$DATA/extracted/subject_${SUB}/MRI_Scanning_sub${SUB}/bold_run${run}"
+  done
+  # Do the same for the T1w image
+  dcm2niix -z y -f "sub-${SUB}_T1w" \
+    -o "$DATA/bids/sub-${SUB}/anat" \
+    "$DATA/extracted/subject_${SUB}/MRI_Scanning_sub${SUB}/t1"
+
+  # Run fMRIPrep on the extracted and converted BIDS data for Participant 26 to get the preprocessed data
+  docker run --rm \
+    -v "$DATA/bids":/data:ro \
+    -v "$DATA/derivatives":/out \
+    -v "$DATA/license.txt":/opt/freesurfer/license.txt:ro \
+    nipreps/fmriprep:25.2.0 \
+    /data /out participant \
+    --participant-label "$SUB" \
+    --fs-license-file /opt/freesurfer/license.txt \
+    --nprocs 8 \
+    --omp-nthreads 4 \
+    --mem-mb 16000
+fi
+```
+
+```{=html}
+</details>
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Preprocessed data quality metrics"
+#| label: preprocessed-quality-metrics
+
+# Initialize the subject chosen and preprocessed data folder
+SUB = 26
+preprocessed_path = data_path / "derivatives" / f"sub-{SUB}"
+
+# Pull mean FD and SD(DVARS) per run from fMRIPrep's estimates
+run_metrics = []
+for run in range(1, 5):
+    timeseries_confounds_path = preprocessed_path / "func" / f"sub-{SUB}_task-sm_run-{run}_desc-confounds_timeseries.tsv"
+    timeseries_confounds = pd.read_table(timeseries_confounds_path)
+    # Fill the NaN values of the first frame with 0
+    run_confounds = timeseries_confounds[['framewise_displacement', 'dvars']].fillna(0)
+    run_metrics.append({'mean_fd': run_confounds['framewise_displacement'].mean(),
+                         'sd_dvars': run_confounds['dvars'].std()})
+
+# Display the metrics per run
+preprocessed_metrics = (pd.DataFrame(run_metrics)
+                         .rename(columns = {'mean_fd': 'Mean FD', 'sd_dvars': 'SD(DVARS)'})
+                         .set_index(pd.RangeIndex(1, 5, name = 'Run')))
+preprocessed_metrics
+```
