@@ -241,7 +241,15 @@ if [ ! -f "$FMRIPREP_REPORT" ]; then
     -o "$DATA/bids/sub-${SUB}/anat" \
     "$DATA/extracted/subject_${SUB}/MRI_Scanning_sub${SUB}/t1"
 
-  # Run fMRIPrep on the extracted and converted BIDS data for Participant 26 to get the preprocessed data
+  # BIDS dataset description required by fMRIPrep
+  cat > "$DATA/bids/dataset_description.json" <<'EOF'
+{
+    "Name": "scene-areas-hierarchy-vem",
+    "BIDSVersion": "1.8.0"
+}
+EOF
+
+  # Run fMRIPrep on BIDS data for Participant 26 to get the preprocessed data
   docker run --rm \
     -v "$DATA/bids":/data:ro \
     -v "$DATA/derivatives":/out \
@@ -249,10 +257,12 @@ if [ ! -f "$FMRIPREP_REPORT" ]; then
     nipreps/fmriprep:25.2.0 \
     /data /out participant \
     --participant-label "$SUB" \
+    --output-spaces T1w \
+    --ignore slicetiming \
     --fs-license-file /opt/freesurfer/license.txt \
     --nprocs 8 \
     --omp-nthreads 4 \
-    --mem-mb 16000
+    --mem-mb 16000 2>&1 | tee "$DATA/fmriprep.log"
 fi
 ```
 
