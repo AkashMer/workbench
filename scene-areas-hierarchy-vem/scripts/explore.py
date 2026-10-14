@@ -164,7 +164,6 @@ for run, start in run_starts.items():
     eye["gaze_y_mean"] = good["y"].mean()
     eye["gaze_speed_mean"] = good["speed"].mean()
     eye["blink_fraction"] = all_samples["blink"].mean()
-    eye["valid_fraction"] = all_samples["valid"].mean()
 
     # Event counts, by the volume each event starts in
     blink_vol = np.floor((blinks["stime"] - start) / tr).astype(int)
@@ -176,4 +175,12 @@ for run, start in run_starts.items():
     eye.to_csv(func_dir / f"{sub}_task-sm_run-{run}_desc-eye_timeseries.tsv", sep="	", index=False)
     print(run, eye.shape, eye.isna().any(axis=1).sum())
 # Volumes with missing values in runs 1-4: 53, 38, 21 and 41
-# Next step should be dealing with missing data
+# Most likely MAR type missing data
+# Z-score the eye regressors per run, fill missing volumes with the run mean and flag them
+for run in runs:
+    eye = pd.read_csv(func_dir / f"{sub}_task-sm_run-{run}_desc-eye_timeseries.tsv", sep="\t")
+    present = eye["pupil_mean"].notna()  # Volumes with valid eye samples
+    eye_z = (eye - eye.mean()) / eye.std()  # Mean and std from observed volumes only
+    eye_z = eye_z.fillna(0)  # Run mean after z-scoring
+    eye_z["eye_tracking_present"] = present.astype(int)  # 1 = valid eye data, 0 = filled
+    eye_z.to_csv(func_dir / f"{sub}_task-sm_run-{run}_desc-eyezscored_timeseries.tsv", sep="	", index=False)
