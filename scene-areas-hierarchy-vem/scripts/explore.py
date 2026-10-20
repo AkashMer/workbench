@@ -4,6 +4,7 @@ import re
 import zipfile
 from pathlib import Path
 
+import cv2
 import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
@@ -184,3 +185,29 @@ for run in runs:
     eye_z = eye_z.fillna(0)  # Run mean after z-scoring
     eye_z["eye_tracking_present"] = present.astype(int)  # 1 = valid eye data, 0 = filled
     eye_z.to_csv(func_dir / f"{sub}_task-sm_run-{run}_desc-eyezscored_timeseries.tsv", sep="	", index=False)
+
+# Task example videos
+period_frames = {
+    "trial_examples_day_1_bhaa117.mp4": [
+        (336, 697, "walking_direction1"),
+        (1135, 1496, "walking_direction2"),
+        (1967, 2330, "walking_direction4"),
+        (2832, 3195, "walking_direction2"),
+        (3681, 4043, "walking_direction3"),
+    ],
+    "trial_examples_day_2_bhaa117.mp4": [
+        (428, 793, "walking_direction4"),
+        (1233, 1595, "walking_direction3"),
+        (1714, 1835, "facing"),
+        (2673, 3035, "walking_direction3"),
+        (3553, 3922, "walking_direction1"),
+        (4041, 4165, "facing"),
+    ],
+}
+
+# Load both videos
+videos = {
+    video_name: cv2.VideoCapture(str(data_path / video_name))
+    for video_name in period_frames
+}
+
