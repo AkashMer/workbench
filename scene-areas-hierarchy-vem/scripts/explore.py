@@ -211,3 +211,20 @@ videos = {
     for video_name in period_frames
 }
 
+# Grab the frames of each period
+clips = []
+for video_name, periods in period_frames.items():
+    video = videos[video_name]
+    for start, end, label in periods:
+        video.set(cv2.CAP_PROP_POS_FRAMES, start)  # Seek to the first frame
+        frames = []
+        for _ in range(end - start + 1):  # End frame is inclusive
+            ok, frame = video.read()  # BGR array
+            if not ok:
+                break
+            frames.append(frame)
+        clips.append({"video": video_name, "label": label, "start": start, "frames": np.stack(frames)})
+
+# Release the video handles
+for video in videos.values():
+    video.release()
