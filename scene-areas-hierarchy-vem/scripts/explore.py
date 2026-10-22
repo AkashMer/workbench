@@ -10,12 +10,17 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
 from eyelinkio import read_edf
 from nilearn.image import clean_img, load_img
 from nilearn.interfaces.fmriprep import load_confounds
 from nilearn.signal import clean
 from scipy.ndimage import median_filter
 from scipy.signal import savgol_filter
+from torchvision.models.detection import (
+    MaskRCNN_ResNet50_FPN_V2_Weights,
+    maskrcnn_resnet50_fpn_v2,
+)
 
 # Paths
 data_path = Path.cwd() / "data"
@@ -189,19 +194,19 @@ for run in runs:
 # Task example videos
 period_frames = {
     "trial_examples_day_1_bhaa117.mp4": [
-        (336, 697, "walking_direction1"),
-        (1135, 1496, "walking_direction2"),
-        (1967, 2330, "walking_direction4"),
-        (2832, 3195, "walking_direction2"),
-        (3681, 4043, "walking_direction3"),
+        (336, 696, "walking_direction_1"),
+        (1135, 1495, "walking_direction_2"),
+        (1967, 2329, "walking_direction_4"),
+        (2832, 3194, "walking_direction_2"),
+        (3681, 4042, "walking_direction_3"),
     ],
     "trial_examples_day_2_bhaa117.mp4": [
-        (428, 793, "walking_direction4"),
-        (1233, 1595, "walking_direction3"),
-        (1714, 1835, "facing"),
-        (2673, 3035, "walking_direction3"),
-        (3553, 3922, "walking_direction1"),
-        (4041, 4165, "facing"),
+        (428, 792, "walking_direction_4"),
+        (1233, 1594, "walking_direction_3"),
+        (1714, 1834, "facing_direction"),
+        (2673, 3034, "walking_direction_3"),
+        (3553, 3921, "walking_direction_1"),
+        (4041, 4164, "facing_direction"),
     ],
 }
 
@@ -211,11 +216,29 @@ videos = {
     for video_name in period_frames
 }
 
-# Grab the frames of each period
+# One clip per walking direction and one facing clip, picked by checking the masks
+selected_clips = {
+    ("trial_examples_day_1_bhaa117.mp4", 336),
+    ("trial_examples_day_1_bhaa117.mp4", 1135),
+    ("trial_examples_day_2_bhaa117.mp4", 2673),
+    ("trial_examples_day_2_bhaa117.mp4", 428),
+    ("trial_examples_day_2_bhaa117.mp4", 1714),
+}
+
+# Load Mask R-CNN (COCO person) on the GPU
+model = maskrcnn_resnet50_fpn_v2(weights=MaskRCNN_ResNet50_FPN_V2_Weights.DEFAULT, box_score_thresh=0.3).eval().cuda()
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))  # Dilation kernel
+rng = np.random.default_rng(524)
+clip_path = data_path / "derivatives" / "masked_clips"
+clip_path.mkdir(exist_ok=True)
+
+# Grab the frames of each selected period, mask the characters and fill them with white noise
 clips = []
 for video_name, periods in period_frames.items():
     video = videos[video_name]
     for start, end, label in periods:
+        if (video_name, start) not in selected_clips:
+            continue
         video.set(cv2.CAP_PROP_POS_FRAMES, start)  # Seek to the first frame
         frames = []
         for _ in range(end - start + 1):  # End frame is inclusive
@@ -223,7 +246,33 @@ for video_name, periods in period_frames.items():
             if not ok:
                 break
             frames.append(frame)
-        clips.append({"video": video_name, "label": label, "start": start, "frames": np.stack(frames)})
+        frames = np.stack(frames)
+        masks = []
+        for i in range(0, len(frames), 8):  # Batches of 8 frames
+            batch = [torch.from_numpy(f[..., ::-1].copy()).permute(2, 0, 1).float().div(255).cuda() for f in frames[i:i + 8]]  # BGR to RGB tensors
+            with torch.no_grad():
+                results = model(batch)
+            for result in results:
+                person = (result["labels"] == 1) & (result["scores"] > 0.5)  # Confident person detections
+                mask = (result["masks"][person, 0] > 0.5).any(0).cpu().numpy() if person.any() else np.zeros(frames.shape[1:3], bool)  # Union of person masks
+                masks.append(cv2.dilate(mask.astype(np.uint8), kernel).astype(bool))  # Dilate the mask
+        masks = np.stack(masks)
+        frames = frames.astype(np.float32)
+        mean = np.stack([f[~m].mean(0) for f, m in zip(frames, masks)])[:, None, None, :]  # Unmasked mean per frame and channel
+        std = np.stack([f[~m].std(0) for f, m in zip(frames, masks)])[:, None, None, :]  # Unmasked std per frame and channel
+        noise = np.clip(rng.normal(mean, std, frames.shape), 0, 255)  # Independent noise per channel
+        frames = np.where(masks[..., None], noise, frames).astype(np.uint8)  # Masked pixels replaced by noise
+        clips.append({"video": video_name, "label": label, "start": start, "frames": frames, "masks": masks})
+
+        # Save the masked clip as lossless arrays for feature extraction
+        np.save(clip_path / f"{label}_frames.npy", frames)
+        np.save(clip_path / f"{label}_masks.npy", masks)
+
+        # Save the masked clip as mp4 for viewing
+        writer = cv2.VideoWriter(str(clip_path / f"{label}.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 60, (frames.shape[2], frames.shape[1]))
+        for frame in frames:
+            writer.write(frame)
+        writer.release()
 
 # Release the video handles
 for video in videos.values():
