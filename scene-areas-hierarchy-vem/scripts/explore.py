@@ -1,8 +1,11 @@
 # Import necessary libraries
 import json
 import re
+import sys
+import urllib.request
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import matplotlib.pyplot as plt
@@ -277,3 +280,30 @@ for video_name, periods in period_frames.items():
 # Release the video handles
 for video in videos.values():
     video.release()
+
+# Download PiDiNet code and weights
+pidinet_commit = "d21aa881ed9c628571636fad39acfe1fad517ebd"
+pidinet_path = data_path / "pidinet"
+if not pidinet_path.exists():
+    zip_path = data_path / "pidinet.zip"
+    urllib.request.urlretrieve(f"https://github.com/hellozhuo/pidinet/archive/{pidinet_commit}.zip", zip_path)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(data_path)
+    # Rename the folder
+    (data_path / f"pidinet-{pidinet_commit}").rename(pidinet_path)
+    # Delete the zip
+    zip_path.unlink()
+
+# Import PiDiNet from the downloaded repo
+sys.path.insert(0, str(pidinet_path))
+from models.pidinet import pidinet
+
+# Build the model
+pidinet_model = pidinet(SimpleNamespace(config="carv4", dil=True, sa=True))
+# Load the weights
+checkpoint = torch.load(pidinet_path / "trained_models" / "table5_pidinet.pth", map_location="cpu", weights_only=False)
+# Strip the module prefix
+pidinet_model.load_state_dict({k.replace("module.", ""): v for k, v in checkpoint["state_dict"].items()})
+# Move to the GPU
+pidinet_model = pidinet_model.cuda().eval()
+
