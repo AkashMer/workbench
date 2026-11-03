@@ -18,8 +18,11 @@ from eyelinkio import read_edf
 from nilearn.image import clean_img, load_img
 from nilearn.interfaces.fmriprep import load_confounds
 from nilearn.signal import clean
-from scipy.ndimage import median_filter
+from scipy.ndimage import convolve, find_objects, median_filter
+from scipy.ndimage import label as label_regions
 from scipy.signal import savgol_filter
+from skimage.filters import apply_hysteresis_threshold
+from skimage.morphology import remove_small_objects, skeletonize
 from torchvision.models.detection import (
     MaskRCNN_ResNet50_FPN_V2_Weights,
     maskrcnn_resnet50_fpn_v2,
@@ -307,3 +310,152 @@ pidinet_model.load_state_dict({k.replace("module.", ""): v for k, v in checkpoin
 # Move to the GPU
 pidinet_model = pidinet_model.cuda().eval()
 
+# Junction types and 15 degree angle bins
+junction_labels = ["T", "Y", "Arrow", "X"]
+angle_bins = np.arange(0, 121, 15)
+# Kernel that counts the 8 neighbours of a pixel
+neighbours = np.ones((3, 3), int)
+neighbours[1, 1] = 0
+# Dilation kernel for the area around the masked characters
+exclusion_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (31, 31))
+# ImageNet mean and std on the GPU
+imagenet_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).cuda()
+imagenet_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).cuda()
+
+
+# Contour map of a BGR frame (PiDiNet run on the frame enlarged 2x)
+def contour_map(frame):
+    height, width = frame.shape[:2]
+    # Enlarge the frame 2x
+    enlarged = cv2.resize(frame, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    # BGR array to RGB tensor with values 0 to 1 on the GPU
+    x = torch.from_numpy(enlarged[..., ::-1].copy()).permute(2, 0, 1)[None].float().cuda() / 255
+    # Normalize the tensor, run PiDiNet and keep its final contour map
+    with torch.no_grad():
+        contours = pidinet_model((x - imagenet_mean) / imagenet_std)[-1][0, 0].cpu().numpy()
+    # Shrink the contour map back to the frame size
+    return cv2.resize(contours, (width, height), interpolation=cv2.INTER_AREA)
+
+
+# Pixels of a one-pixel-wide line in order from one end to the other
+def order_path(coords):
+    pixels = {tuple(c) for c in coords}
+    # Neighbours of a pixel that are on the line
+    def pixel_neighbours(c):
+        return [(c[0] + dy, c[1] + dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1) if (dy or dx) and (c[0] + dy, c[1] + dx) in pixels]
+    # Pixels with one neighbour are the ends of the line
+    ends = [c for c in pixels if len(pixel_neighbours(c)) == 1]
+    if not ends:
+        return None
+    # Walk along the line from one end until there is no unseen neighbour
+    path, current = [ends[0]], ends[0]
+    seen = {current}
+    while True:
+        following = [n for n in pixel_neighbours(current) if n not in seen]
+        if not following:
+            return path
+        current = following[0]
+        seen.add(current)
+        path.append(current)
+
+
+# Junction type from the directions of the lines leaving a junction (Walther et al., 2023)
+def junction_type(angles):
+    angles = np.sort(angles)
+    # Four lines are an X
+    if len(angles) == 4:
+        return "X"
+    # Other numbers of lines get no type
+    if len(angles) != 3:
+        return None
+    # Largest angle between neighbouring lines
+    max_angle = np.diff(np.r_[angles, angles[0] + 360]).max()
+    # Under 160 is Y, 160 to 200 is T, over 200 is Arrow
+    if max_angle < 160:
+        return "Y"
+    return "T" if max_angle <= 200 else "Arrow"
+
+
+# Junction types and minimum angles in a skeleton of one-pixel-wide lines
+def find_junctions(skeleton):
+    # Skeleton pixels with three or more neighbours
+    branch = skeleton & (convolve(skeleton.astype(int), neighbours, mode="constant") >= 3)
+    # Group branch pixels less than 2 px apart into one junction
+    merged = cv2.dilate(branch.astype(np.uint8), np.ones((5, 5), np.uint8)).astype(bool)
+    junction_ids, n_junctions = label_regions(merged, structure=np.ones((3, 3)))
+    # Centre of each junction
+    ys, xs = np.nonzero(branch)
+    ids = junction_ids[ys, xs]
+    n_pixels = np.maximum(np.bincount(ids, minlength=n_junctions + 1), 1)
+    centre_y = np.bincount(ids, ys, n_junctions + 1) / n_pixels
+    centre_x = np.bincount(ids, xs, n_junctions + 1) / n_pixels
+    # Lines of the skeleton between the junctions
+    line_ids, _ = label_regions(skeleton & ~merged, structure=np.ones((3, 3)))
+    directions = {j: [] for j in range(1, n_junctions + 1)}
+    # Direction of each line leaving each junction
+    for line_id, box in enumerate(find_objects(line_ids), 1):
+        # Pixels of the line
+        coords = np.argwhere(line_ids[box] == line_id) + [box[0].start, box[1].start]
+        # Skip lines under 6 px
+        if len(coords) < 6:
+            continue
+        # Pixels of the line in order from one end to the other
+        path = order_path(coords)
+        if path is None:
+            continue
+        # Both ends of the line, each with the path starting at that end
+        for end, from_end in ((path[0], path), (path[-1], path[::-1])):
+            # Junction within 2 px of the end of the line
+            near = junction_ids[max(end[0] - 2, 0):end[0] + 3, max(end[1] - 2, 0):end[1] + 3].max()
+            if near == 0:
+                continue
+            # Pixel 8 steps along the line from the junction
+            y, x = from_end[min(8, len(from_end) - 1)]
+            # Direction from the junction centre to that pixel in degrees
+            directions[near].append(np.degrees(np.arctan2(y - centre_y[near], x - centre_x[near])) % 360)
+    # Type and smallest angle between neighbouring lines of each junction
+    types, min_angles = [], []
+    for angles in directions.values():
+        junction = junction_type(angles)
+        if junction:
+            types.append(junction)
+            sorted_angles = np.sort(angles)
+            min_angles.append(np.diff(np.r_[sorted_angles, sorted_angles[0] + 360]).min())
+    return types, min_angles
+
+
+# Contour junction features for each volume of each masked clip
+feature_names = junction_labels + [f"angle_{low}_{low + 15}" for low in angle_bins[:-1]]
+feature_rows = []
+for clip_label in ["walking_direction_1", "walking_direction_2", "walking_direction_3", "walking_direction_4", "facing_direction"]:
+    # Load the clip without its last frame
+    clip_frames = np.load(clip_path / f"{clip_label}_frames.npy")[:-1]
+    clip_masks = np.load(clip_path / f"{clip_label}_masks.npy")[:-1]
+    # Junction counts, angle histograms and unmasked areas of each frame
+    counts = np.zeros((len(clip_frames), len(junction_labels)))
+    histograms = np.zeros((len(clip_frames), len(angle_bins) - 1))
+    areas = np.zeros(len(clip_frames))
+    for i, (frame, mask) in enumerate(zip(clip_frames, clip_masks)):
+        # Area around the masked characters
+        excluded = cv2.dilate(mask.astype(np.uint8), exclusion_kernel).astype(bool)
+        # Contour map thresholded into lines
+        lines = apply_hysteresis_threshold(contour_map(frame), 0.2, 0.5)
+        # Remove lines in the excluded area and along the image border
+        lines[excluded] = False
+        lines[:4], lines[-4:], lines[:, :4], lines[:, -4:] = False, False, False, False
+        # Thin the lines to one pixel and remove lines under 20 px
+        skeleton = remove_small_objects(skeletonize(lines), 20, connectivity=2)
+        # Junction types and minimum angles of the frame
+        types, min_angles = find_junctions(skeleton)
+        # Store the counts, angle histogram and unmasked area of the frame
+        counts[i] = [types.count(t) for t in junction_labels]
+        histograms[i] = np.histogram(min_angles, bins=angle_bins)[0]
+        areas[i] = (~excluded).sum()
+    # Junctions per 1000 unmasked pixels in each window of 120 frames (one volume)
+    for volume in range(len(clip_frames) // 120):
+        window = slice(volume * 120, (volume + 1) * 120)
+        totals = np.concatenate([counts[window].sum(0), histograms[window].sum(0)])
+        feature_rows.append({"clip": clip_label, "volume": volume, **dict(zip(feature_names, 1000 * totals / areas[window].sum()))})
+# Table of the features, saved as TSV
+contour_junctions = pd.DataFrame(feature_rows)
+contour_junctions.to_csv(data_path / "derivatives" / "contour_junction_features.tsv", sep="\t", index=False)
