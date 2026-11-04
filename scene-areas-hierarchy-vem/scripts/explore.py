@@ -342,7 +342,14 @@ def order_path(coords):
     pixels = {tuple(c) for c in coords}
     # Neighbours of a pixel that are on the line
     def pixel_neighbours(c):
-        return [(c[0] + dy, c[1] + dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1) if (dy or dx) and (c[0] + dy, c[1] + dx) in pixels]
+        found = []
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                near = (c[0] + dy, c[1] + dx)
+                # Keep the surrounding pixels that are on the line
+                if (dy or dx) and near in pixels:
+                    found.append(near)
+        return found
     # Pixels with one neighbour are the ends of the line
     ends = [c for c in pixels if len(pixel_neighbours(c)) == 1]
     if not ends:
@@ -424,10 +431,54 @@ def find_junctions(skeleton):
     return types, min_angles
 
 
+# Gabor arm leaving the apex in one direction (Nasr et al., 2014)
+def arm_kernel(direction, wavelength):
+    # Grid around the apex
+    half = int(wavelength * 2)
+    y, x = np.mgrid[-half:half + 1, -half:half + 1]
+    dx, dy = np.cos(np.radians(direction)), np.sin(np.radians(direction))
+    # Distance along the arm and across it
+    along = x * dx + y * dy
+    across = -x * dy + y * dx
+    # Cosine across the arm
+    carrier = np.cos(2 * np.pi * across / wavelength)
+    # Narrow Gaussian across the arm and long Gaussian along it
+    envelope = np.exp(-across**2 / (2 * (wavelength / 4)**2)) * np.exp(-along**2 / (2 * wavelength**2))
+    # Keep the forward half only
+    return (along >= 0) * carrier * envelope
+
+
+# Response to two arms meeting at an angle, best over 16 orientations
+def corner_response(skeleton, arm_angle, wavelength):
+    directions = np.arange(0, 360, 22.5)
+    lines = skeleton.astype(np.float32)
+    # Positive response of a single arm in each direction
+    arms = {}
+    for d in directions:
+        kernel = arm_kernel(d, wavelength).astype(np.float32)
+        arms[d] = np.maximum(cv2.filter2D(lines, cv2.CV_32F, kernel), 0)
+    # Both arms must respond, so take the smaller one at each orientation
+    corners = []
+    for o in directions:
+        corners.append(np.minimum(arms[(o - arm_angle / 2) % 360], arms[(o + arm_angle / 2) % 360]))
+    # Best orientation at each pixel
+    return np.max(corners, 0)
+
+
 # Contour junction features for each volume of each masked clip
 feature_names = junction_labels + [f"angle_{low}_{low + 15}" for low in angle_bins[:-1]]
 feature_rows = []
-for clip_label in ["walking_direction_1", "walking_direction_2", "walking_direction_3", "walking_direction_4", "facing_direction"]:
+# Rectilinearity features: 90 degree corners at 5 px and straight lines at 9 px
+rectilinearity_names = ["corner_90_wl5", "straight_180_wl9"]
+rectilinearity_rows = []
+clip_labels = [
+    "walking_direction_1",
+    "walking_direction_2",
+    "walking_direction_3",
+    "walking_direction_4",
+    "facing_direction",
+]
+for clip_label in clip_labels:
     # Load the clip without its last frame
     clip_frames = np.load(clip_path / f"{clip_label}_frames.npy")[:-1]
     clip_masks = np.load(clip_path / f"{clip_label}_masks.npy")[:-1]
@@ -435,6 +486,7 @@ for clip_label in ["walking_direction_1", "walking_direction_2", "walking_direct
     counts = np.zeros((len(clip_frames), len(junction_labels)))
     histograms = np.zeros((len(clip_frames), len(angle_bins) - 1))
     areas = np.zeros(len(clip_frames))
+    rectilinearity = np.zeros((len(clip_frames), len(rectilinearity_names)))
     for i, (frame, mask) in enumerate(zip(clip_frames, clip_masks)):
         # Area around the masked characters
         excluded = cv2.dilate(mask.astype(np.uint8), exclusion_kernel).astype(bool)
@@ -451,11 +503,22 @@ for clip_label in ["walking_direction_1", "walking_direction_2", "walking_direct
         counts[i] = [types.count(t) for t in junction_labels]
         histograms[i] = np.histogram(min_angles, bins=angle_bins)[0]
         areas[i] = (~excluded).sum()
+        # Corner and straight line responses
+        corners = corner_response(skeleton, 90, 5)
+        straights = corner_response(skeleton, 180, 9)
+        # Mean of each over the unmasked pixels
+        rectilinearity[i] = [corners[~excluded].mean(), straights[~excluded].mean()]
     # Junctions per 1000 unmasked pixels in each window of 120 frames (one volume)
     for volume in range(len(clip_frames) // 120):
         window = slice(volume * 120, (volume + 1) * 120)
         totals = np.concatenate([counts[window].sum(0), histograms[window].sum(0)])
         feature_rows.append({"clip": clip_label, "volume": volume, **dict(zip(feature_names, 1000 * totals / areas[window].sum()))})
+        # Rectilinearity averaged over the window
+        means = rectilinearity[window].mean(0)
+        rectilinearity_rows.append({"clip": clip_label, "volume": volume, **dict(zip(rectilinearity_names, means))})
 # Table of the features, saved as TSV
 contour_junctions = pd.DataFrame(feature_rows)
 contour_junctions.to_csv(data_path / "derivatives" / "contour_junction_features.tsv", sep="\t", index=False)
+# Table of the rectilinearity features, saved as TSV
+pd.DataFrame(rectilinearity_rows).to_csv(data_path / "derivatives" / "contour_rectilinearity_features.tsv",
+sep="\t", index=False)
