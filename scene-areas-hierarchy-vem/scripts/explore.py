@@ -522,3 +522,87 @@ contour_junctions.to_csv(data_path / "derivatives" / "contour_junction_features.
 # Table of the rectilinearity features, saved as TSV
 pd.DataFrame(rectilinearity_rows).to_csv(data_path / "derivatives" / "contour_rectilinearity_features.tsv",
 sep="\t", index=False)
+
+
+# Gabor filter bank (pymoten static Gabor pyramid): frequencies in cycles per image
+gabor_freqs = [0, 2, 4, 8, 16]
+gabor_orientations = [0, 45, 90, 135]
+# Frames and masks are shrunk to this size for the filters
+gabor_h, gabor_w = 192, 256
+# Pixel coordinates, 0 to 1 down the image height
+gabor_v = (np.arange(gabor_h) + 0.5) / gabor_h
+gabor_u = (np.arange(gabor_w) + 0.5) / gabor_h
+gabor_vv, gabor_uu = np.meshgrid(gabor_v, gabor_u, indexing="ij")
+# Tiles with more of their envelope than this on the excluded area are dropped
+overlap_limit = 0.25
+
+# Envelope width and tile centres of the Gabor filters at one frequency
+def gabor_tiles(freq):
+    # Envelope width in image heights, capped at 0.3
+    envelope = min(np.inf if freq == 0 else 0.6 / freq, 0.3)
+    # Tiles are 3.5 envelope widths apart
+    step = 3.5 * envelope
+    # Tiles on each side of the image centre
+    n_v = max(np.floor((1 - step) / step / 2), 0)
+    n_h = max(np.floor((gabor_w / gabor_h - step) / step / 2), 0)
+    centres_v = step * np.arange(-n_v, n_v + 1) + 0.5
+    centres_h = step * np.arange(-n_h, n_h + 1) + gabor_w / gabor_h / 2
+    return envelope, centres_v, centres_h
+
+# Sin and cos kernels, normalised envelopes and feature index of every tile
+sin_kernels, cos_kernels, envelopes, tile_feature = [], [], [], []
+gabor_names = []
+for freq in gabor_freqs:
+    envelope, centres_v, centres_h = gabor_tiles(freq)
+    # Frequency 0 has no orientation
+    for orientation in (gabor_orientations if freq > 0 else [0]):
+        feature = len(gabor_names)
+        gabor_names.append(f"sf{freq}_ori{orientation}" if freq > 0 else "sf0")
+        angle = np.deg2rad(orientation)
+        # Grating frequency along the horizontal and vertical axes
+        freq_h = -freq * np.cos(angle) * 2 * np.pi
+        freq_v = freq * np.sin(angle) * 2 * np.pi
+        for centre_v in centres_v:
+            for centre_h in centres_h:
+                dv, dh = gabor_vv - centre_v, gabor_uu - centre_h
+                gaussian = np.exp(-(dh**2 + dv**2) / (2 * envelope**2))
+                phase = dh * freq_h + dv * freq_v
+                sin_kernels.append((gaussian * np.sin(phase)).ravel())
+                cos_kernels.append((gaussian * np.cos(phase)).ravel())
+                envelopes.append((gaussian / gaussian.sum()).ravel())
+                tile_feature.append(feature)
+sin_kernels = np.array(sin_kernels, dtype=np.float32)
+cos_kernels = np.array(cos_kernels, dtype=np.float32)
+envelopes = np.array(envelopes, dtype=np.float32)
+tile_feature = np.array(tile_feature)
+
+# Gabor features for each volume of each masked clip
+gabor_rows = []
+for clip_label in clip_labels:
+    # Load the clip without its last frame
+    clip_frames = np.load(clip_path / f"{clip_label}_frames.npy")[:-1]
+    clip_masks = np.load(clip_path / f"{clip_label}_masks.npy")[:-1]
+    gabor_means = np.zeros((len(clip_frames), len(gabor_names)))
+    for i, (frame, mask) in enumerate(zip(clip_frames, clip_masks)):
+        # Greyscale frame shrunk to the filter size
+        grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        grey = cv2.resize(grey, (gabor_w, gabor_h), interpolation=cv2.INTER_AREA) / 255
+        grey = grey.ravel().astype(np.float32)
+        # Area around the masked characters, shrunk to the filter size
+        excluded = cv2.dilate(mask.astype(np.uint8), exclusion_kernel).astype(np.float32)
+        excluded = cv2.resize(excluded, (gabor_w, gabor_h), interpolation=cv2.INTER_AREA).ravel() > 0.5
+        # Log energy of every tile
+        energy = np.sqrt((sin_kernels @ grey) ** 2 + (cos_kernels @ grey) ** 2)
+        energy = np.log(energy + 1e-5)
+        # Tiles with little of their envelope on the excluded area
+        kept = (envelopes @ excluded.astype(np.float32)) <= overlap_limit
+        # Mean energy of the kept tiles of each filter type
+        sums = np.bincount(tile_feature[kept], energy[kept], minlength=len(gabor_names))
+        counts = np.bincount(tile_feature[kept], minlength=len(gabor_names))
+        gabor_means[i] = sums / counts
+    # Mean over each window of 120 frames (one volume)
+    for volume in range(len(clip_frames) // 120):
+        window = slice(volume * 120, (volume + 1) * 120)
+        gabor_rows.append({"clip": clip_label, "volume": volume, **dict(zip(gabor_names, gabor_means[window].mean(0)))})
+# Table of the Gabor features, saved as TSV
+pd.DataFrame(gabor_rows).to_csv(data_path / "derivatives" / "gabor_features.tsv", sep="\t", index=False)
